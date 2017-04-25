@@ -4,19 +4,64 @@
 
 import sqlite3
 
-conn = sqlite3.connect('proxyscan.db')
-cursor = conn.cursor()
 
-print("Opened database successfully")
+class Database:
+    def __init__(self):
+        self.conn = sqlite3.connect('proxyscan.db')
+        self.cursor = self.conn.cursor()
 
-cursor.execute('create table user('
-               'id int primary key, '
-               'url varchar(150), '
-               'scheme varchar(10), '
-               'path varchar(50), '
-               'port varchar(5), '
-               'status_code varchar(3)'
-               ')')
+    def create_database(self):
+        self.cursor.execute('create table result('
+                            'id int primary key, '
+                            'url varchar(255), '
+                            'scheme varchar(10), '
+                            'host varchar(255), '
+                            'path varchar(64), '
+                            'port varchar(6), '
+                            'status_code varchar(3)'
+                            ')')
+        print("create database successfully")
 
-cursor.close()
-conn.close()
+    def insert(self, result):
+        url = result['url'].decode()
+        scheme = result['scheme'].decode()
+        host = result['host'].decode()
+        path = result['path'].decode()
+        port = result['port'].decode()
+        status_code = result['status_code'].decode()
+
+        sql = "insert into result (url, scheme, host, path, port, status_code) values ('%s', '%s', '%s', '%s', '%s', '%s')"\
+              % (url, scheme, host, path, port, status_code)
+        self.cursor.execute(sql)
+        self.conn.commit()
+
+        self.clean()
+
+    def select(self):
+        sql = 'select * from result order by id desc limit 10'
+        self.cursor.execute(sql)
+        results = self.cursor.fetchall()
+
+        _results = []
+        for result in results:
+            _result = {}
+            _result['id'] = result[0]
+            _result['url'] = result[1]
+            _result['scheme'] = result[2]
+            _result['host'] = result[3]
+            _result['path'] = result[4]
+            _result['port'] = result[5]
+            _result['status_code'] = result[6]
+            _results.append(_result)
+
+        self.clean()
+
+        return _results
+
+    def clean(self):
+        self.cursor.close()
+        self.conn.close()
+
+if __name__ == '__main__':
+    d = Database()
+    d.select()

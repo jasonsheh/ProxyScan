@@ -2,10 +2,13 @@
 # __author__ = 'jasonsheh'
 # -*- coding:utf-8 -*-
 
+from database import Database
+
 import socket
 import sys
 import ssl
 import time
+import queue
 from urllib.parse import urlparse
 
 data_size = 2048
@@ -13,6 +16,7 @@ data_size = 2048
 
 class Proxy:
     def __init__(self):
+        self.q = queue.Queue(0)
         self.host = '0.0.0.0'
         self.port = 8000
         self.urls = []
@@ -43,7 +47,7 @@ class Proxy:
 
                 if not client_data:
                     continue
-                print(client_data)
+                # print(client_data)
 
                 # 分析得到 header 信息
                 header = client_data.split(b"\r\n")
@@ -63,14 +67,13 @@ class Proxy:
 
                 # 统计访问记录
                 # print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())))
-                result = {}
-                result['scheme'], result['netloc'], result['path'], \
+                result = {'url' : url}
+                result['scheme'], result['host'], result['path'], \
                     result['params'], result['query'], result['fragment'] = urlparse(url)
-                if b':' in result['netloc']:
-                    result['port'] = result['netloc'].rsplit(b':')[1]
+                if b':' in result['host']:
+                    result['port'] = result['host'].rsplit(b':')[1]
                 else:
                     result['port'] = b'80'
-                print(result)
 
                 self.urls.append(url)
 
@@ -93,6 +96,7 @@ class Proxy:
                         else:
                             break
                     conn.sendall(https_buf)
+                    result['status_code'] = https_buf.split(b"\r\n")[0].split(b' ')[1]
                     https_sock.close()
 
                 elif b':' in url:
@@ -108,16 +112,21 @@ class Proxy:
                         else:
                             break
                     conn.sendall(http_buf)
+
+                    result['status_code'] = http_buf.split(b"\r\n")[0].split(b' ')[1]
                     http_sock.close()
 
                 conn.close()
+
+                print(result)
+
+                Database().insert(result)
 
             except KeyboardInterrupt:
                 break
 
         # 关闭所有连接
         self.proxy_sock.close()
-        print(self.urls)
         print("python proxy close")
 
 

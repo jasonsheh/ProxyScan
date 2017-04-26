@@ -7,7 +7,7 @@ import sqlite3
 
 class Database:
     def __init__(self):
-        self.conn = sqlite3.connect('proxyscan.db')
+        self.conn = sqlite3.connect('d://tools/python/ProxyScan/proxyscan.db')
         self.cursor = self.conn.cursor()
 
     def create_database(self):
@@ -37,8 +37,8 @@ class Database:
 
         self.clean()
 
-    def select(self):
-        sql = 'select * from result order by id desc limit 10'
+    def select(self, page):
+        sql = 'select * from result order by id desc limit %s, 15' % str((page-1) * 15)
         self.cursor.execute(sql)
         results = self.cursor.fetchall()
 
@@ -58,10 +58,17 @@ class Database:
 
         return _results
 
+    def count(self):
+        sql = 'select count(*) from result'
+        self.cursor.execute(sql)
+        max_page = self.cursor.fetchone()
+        return (max_page[0] // 15) + 1
+
     def clean(self):
         self.cursor.close()
         self.conn.close()
 
 if __name__ == '__main__':
     d = Database()
-    d.select()
+    # d.select(page=1)
+    d.count()

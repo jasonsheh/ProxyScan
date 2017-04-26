@@ -21,6 +21,7 @@ class Proxy:
         self.port = 8000
         self.urls = []
         self.denies = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com', b'baidu.com']
+        self.static_ext = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico']
 
         # 创建socket对象
         self.https_sock = ssl.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
@@ -118,10 +119,19 @@ class Proxy:
 
                 conn.close()
 
-                print(result)
+                flag = 0
+                for ext in self.static_ext:
+                    if url.endswith(ext):
+                        flag = 1
+                if flag:
+                    continue
 
+                print(result)
                 Database().insert(result)
 
+            except TimeoutError:
+                conn.close()
+                continue
             except KeyboardInterrupt:
                 break
 

@@ -7,12 +7,12 @@ import sqlite3
 
 class Database:
     def __init__(self):
-        self.conn = sqlite3.connect('d://tools/python/ProxyScan/proxyscan.db')
+        self.conn = sqlite3.connect('/home/jasonsheh/Tools/python/ProxyScan/proxyscan.db')
         self.cursor = self.conn.cursor()
 
     def create_database(self):
         self.cursor.execute('create table result('
-                            'id int primary key, '
+                            'id integer primary key, '
                             'url varchar(255), '
                             'scheme varchar(10), '
                             'host varchar(255), '
@@ -37,7 +37,7 @@ class Database:
 
         self.clean()
 
-    def select(self, page):
+    def select_page(self, page):
         sql = 'select * from result order by id desc limit %s, 15' % str((page-1) * 15)
         self.cursor.execute(sql)
         results = self.cursor.fetchall()
@@ -58,6 +58,25 @@ class Database:
 
         return _results
 
+    def select_detail(self, _id):
+        sql = 'select * from result where id = %s' % _id
+        self.cursor.execute(sql)
+        result = self.cursor.fetchone()
+        _result = {}
+        _result['id'] = result[0]
+        _result['url'] = result[1]
+        _result['scheme'] = result[2]
+        _result['host'] = result[3]
+        _result['path'] = result[4]
+        _result['port'] = result[5]
+        _result['status_code'] = result[6]
+
+        self.clean()
+
+        return _result
+
+
+
     def count(self):
         sql = 'select count(*) from result'
         self.cursor.execute(sql)
@@ -70,5 +89,6 @@ class Database:
 
 if __name__ == '__main__':
     d = Database()
-    # d.select(page=1)
-    d.count()
+    # d.select_page(page=1)
+    d.select_detail(_id=10)
+    # d.create_database()

@@ -17,8 +17,6 @@
 
   </head>
 
-</script>
-
   <body>
 
 <!-- Static navbar -->
@@ -62,7 +60,7 @@
 
 {% for result in results %}
 <tr>
-<td>#{{result.id}}</td>
+  <td><a href="/detail/{{result.id}}">{{result.id}}</a></td>
 <td>{{result.host | truncate(40, True)}}</td>
 <td>{{result.scheme}}</td>
 <td>{{result.path | truncate(40, True)}}</td>

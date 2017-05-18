@@ -18,7 +18,8 @@ class Database:
                             'host varchar(255), '
                             'path varchar(64), '
                             'port varchar(6), '
-                            'status_code varchar(3)'
+                            'status_code varchar(3), '
+                            'sqli tinyint '
                             ')')
         print("create database successfully")
 
@@ -29,9 +30,11 @@ class Database:
         path = result['path'].decode()
         port = result['port'].decode()
         status_code = result['status_code'].decode()
+        sqli = result['sqli']
 
-        sql = "insert into result (url, scheme, host, path, port, status_code) values ('%s', '%s', '%s', '%s', '%s', '%s')"\
-              % (url, scheme, host, path, port, status_code)
+        sql = "insert into result (url, scheme, host, path, port, status_code, sqli) " \
+              "values ('%s', '%s', '%s', '%s', '%s', '%s', '%s')"\
+              % (url, scheme, host, path, port, status_code, sqli)
         self.cursor.execute(sql)
         self.conn.commit()
 
@@ -52,6 +55,7 @@ class Database:
             _result['path'] = result[4]
             _result['port'] = result[5]
             _result['status_code'] = result[6]
+            _result['sqli'] = result[7]
             _results.append(_result)
 
         self.clean()
@@ -70,6 +74,7 @@ class Database:
         _result['path'] = result[4]
         _result['port'] = result[5]
         _result['status_code'] = result[6]
+        _result['sqli'] = result[7]
 
         self.clean()
 
@@ -90,5 +95,5 @@ class Database:
 if __name__ == '__main__':
     d = Database()
     # d.select_page(page=1)
-    d.select_detail(_id=10)
-    # d.create_database()
+    # d.select_detail(_id=10)
+    d.create_database()

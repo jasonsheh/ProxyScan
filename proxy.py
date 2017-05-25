@@ -37,6 +37,25 @@ class Proxy:
         print("python proxy open")
         self.proxy_sock.listen(10)
 
+    def fliter(self, url, mode):
+        flag = 0
+        if mode == 'host':
+            for deny in self.denies:
+                if deny in url:
+                    flag = 1
+                    break
+
+        elif mode == 'ext':
+            for ext in self.static_ext:
+                if url.endswith(ext):
+                    flag = 1
+                    break
+
+        if flag:
+            return True
+        else:
+            return False
+
     def run(self):
         self.connect_client()
         while True:
@@ -44,35 +63,35 @@ class Proxy:
                 conn, addr = self.proxy_sock.accept()
                 # print("client connect:{0}:{1}".format(addr[0], addr[1]))
 
-                # 接收数据
+                # 发送的总数据
                 client_data = conn.recv(data_size)
 
                 if not client_data:
                     continue
-                # print(client_data)
 
                 # 分析得到 header 信息
-                header = client_data.split(b"\r\n")
-                for _header in header:
+                request_header = client_data.split(b"\r\n\r\n")[0]
+                request_data = client_data.split(b"\r\n\r\n")[1]
+
+                headers = request_header.split(b'\r\n')
+                for _header in headers:
                     if b'Host:' in _header:
                         host = _header.split(b":")[1].strip()
-                url = header[0].split(b" ")[1].strip()
 
-                flag = 0
-                for deny in self.denies:
-                    if deny in url:
-                        flag = 1
-                if flag:
-                    continue
-
-                # 统计访问记录
-                # print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())))
-                result = {'url': url}
+                url = headers[0].split(b" ")[1].strip()
                 if not url.startswith(b'http'):
                     if b':443' in url:
                         url = b'https://'+url
                     else:
                         url = b'http://'+url
+
+                if self.fliter(url, 'host'):
+                    continue
+
+                # 统计访问记录
+                # print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())))
+
+                result = {'url': url, 'request_header': request_header}
                 result['scheme'], result['host'], result['path'], \
                     result['params'], result['query'], result['fragment'] = urlparse(url)
 
@@ -82,6 +101,7 @@ class Proxy:
                     result['port'] = b'80'
 
                 result['method'] = client_data.split(b' ')[0]
+                result['request_data'] = request_data
 
                 if client_data.find(b'Connection') >= 0:
                     client_data = client_data.replace(b'keep-alive', b'close')
@@ -94,20 +114,18 @@ class Proxy:
                     https_sock.connect((host, 443))
                     https_sock.settimeout(10)
                     https_sock.sendall(client_data)
-                    https_buf = b''
+                    host_data = b''
                     while True:
                         https_data = https_sock.recv(data_size)
                         if https_data:
-                            https_buf += https_data
+                            host_data += https_data
                             conn.sendall(https_data)
                         else:
                             break
 
-                    if not https_buf:
+                    if not host_data:
                         conn.close()
                         continue
-
-                    result['status_code'] = https_buf.split(b"\r\n")[0].split(b' ')[1]
                     https_sock.close()
 
                 else:
@@ -115,36 +133,38 @@ class Proxy:
                     http_sock.settimeout(10)
                     http_sock.connect((host, int(result['port'])))
                     http_sock.sendall(client_data)
-                    http_buf = b''
+                    host_data = b''
                     while True:
                         http_data = http_sock.recv(data_size)
                         if http_data:
-                            http_buf += http_data
+                            host_data += http_data
                             conn.sendall(http_data)
                         else:
                             break
 
-                    if not http_buf:
+                    if not host_data:
                         conn.close()
                         continue
-
-                    result['status_code'] = http_buf.split(b"\r\n")[0].split(b' ')[1]
                     http_sock.close()
 
                 conn.close()
 
-                flag = 0
-                for ext in self.static_ext:
-                    if result['path'].endswith(ext):
-                        flag = 1
-                if flag:
+                response_header = client_data.split(b"\r\n\r\n")[0]
+                response_data = client_data.split(b"\r\n\r\n")[1]
+
+                result['response_header'] = response_header
+                result['response_data'] = response_data
+                result['status_code'] = response_header.split(b"\r\n")[0].split(b' ')[1]
+
+                conn.close()
+
+                if self.fliter(result['path'], 'ext'):
                     continue
 
-                s = Sql(url.decode())
+                s = Sql(url.decode(), result['method'], result['request_data'])
                 result['sqli'] = s.run()
 
                 print(result)
-                print(client_data)
                 Database().insert(result)
 
             except BrokenPipeError:

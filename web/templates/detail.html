@@ -118,6 +118,72 @@
 
       </div>
 
+        <div role="tabpanel" class="tab-pane fade" id="request" aria-labelledBy="request-tab">
+
+            <form class="form-horizontal" role="form">
+            <br>
+              <div class="form-group">
+                <label class="col-sm-1 control-label">HTTP Header</label>
+                <div class="col-sm-8">
+                    <textarea class="form-control" rows="10">
+                    {% for header in request_header %}
+                        {{ header }}
+                    </textarea>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="col-sm-1 control-label">Query String</label>
+                <div class="col-sm-8">
+                    <textarea class="form-control" rows="5">
+                    {% if result.request_data %}
+                        {% for header in request_data %}
+                        {{ header }}
+                    {% endif %}
+                    </textarea>
+                </div>
+              </div>
+            </form>
+
+      </div>
+
+        <div role="tabpanel" class="tab-pane fade" id="response" aria-labelledBy="response-tab">
+
+        <br>
+
+        <form class="form-horizontal" role="form">
+
+            <div class="form-group">
+                <label class="col-sm-1 control-label">Response Header</label>
+            <div class="col-sm-8">
+                <textarea class="form-control" rows="8">
+                    {% for header in response_header %}
+                        {{ header }}
+                </textarea>
+                </div>
+              </div>
+
+            <div class="form-group">
+                <label class="col-sm-1 control-label">Response Content</label>
+                <div class="col-sm-8">
+                    <textarea class="form-control" rows="12">
+                    {% if request_data %}
+                        {% for data in response_data %}
+                        {{ data }}
+                    {% endif %}</textarea>
+                </div>
+              </div>
+
+        </form>
+        </div>
+
+    </div>
+  </div>
+
+
+</form>
+
+      </div>
 
 </form>
 </div>
@@ -131,6 +197,5 @@
 <footer class="footer">
 </footer>
 
-</div> <!-- /container -->
 </body>
 </html>

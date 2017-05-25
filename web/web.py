@@ -24,9 +24,12 @@ def index(page=1):
 @app.route('/detail/<int:_id>')
 def detail(_id):
     result = Database().select_detail(_id)
-    print(result)
     return render_template('detail.html',
-                           result=result)
+                           result=result,
+                           request_header=result['request_header'],
+                           request_data=result['request_data'],
+                           response_header=result['response_header'],
+                           response_data=result['response_data'])
 
 
 if __name__ == '__main__':

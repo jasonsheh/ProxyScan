@@ -21,7 +21,7 @@ class Proxy:
         self.q = queue.Queue(0)
         self.host = '0.0.0.0'
         self.port = 8000
-        self.denies = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com', b'firefox.com']
+        self.denies = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com', b'mozilla.org', b'firefox.com']
         self.static_ext = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico']
 
         # 创建socket对象
@@ -39,13 +39,13 @@ class Proxy:
 
     def fliter(self, url, mode):
         flag = 0
-        if mode == 'host':
+        if mode == 'host' and url:
             for deny in self.denies:
                 if deny in url:
                     flag = 1
                     break
 
-        elif mode == 'ext':
+        elif mode == 'ext' and url:
             for ext in self.static_ext:
                 if url.endswith(ext):
                     flag = 1
@@ -66,13 +66,21 @@ class Proxy:
                 # 发送的总数据
                 client_data = conn.recv(data_size)
 
+                # 必要处理
                 if not client_data:
                     continue
+                if b'Accept-Encoding: gzip, deflate' in client_data:
+                    client_data = client_data.replace(b'gzip, deflate', b'')
+                if client_data.find(b'Connection') >= 0:
+                    client_data = client_data.replace(b'keep-alive', b'close')
+                else:
+                    client_data += b'Connection: close\r\n'
+
+                # 拆分数据
+                request_header = client_data.split(b"\r\n\r\n")[0]
+                request_body = client_data.split(b"\r\n\r\n")[1]
 
                 # 分析得到 header 信息
-                request_header = client_data.split(b"\r\n\r\n")[0]
-                request_data = client_data.split(b"\r\n\r\n")[1]
-
                 headers = request_header.split(b'\r\n')
                 for _header in headers:
                     if b'Host:' in _header:
@@ -91,6 +99,7 @@ class Proxy:
                 # 统计访问记录
                 # print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())))
 
+                # 数据整理
                 result = {'url': url, 'request_header': request_header}
                 result['scheme'], result['host'], result['path'], \
                     result['params'], result['query'], result['fragment'] = urlparse(url)
@@ -101,14 +110,9 @@ class Proxy:
                     result['port'] = b'80'
 
                 result['method'] = client_data.split(b' ')[0]
-                result['request_data'] = request_data
+                result['request_body'] = request_body
 
-                if client_data.find(b'Connection') >= 0:
-                    client_data = client_data.replace(b'keep-alive', b'close')
-                else:
-                    client_data += b'Connection: close\r\n'
-
-                # 建立连接
+                # 建立连接， 发送接收数据
                 if result['port'] == b'443':
                     https_sock = ssl.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
                     https_sock.connect((host, 443))
@@ -149,19 +153,25 @@ class Proxy:
 
                 conn.close()
 
-                response_header = client_data.split(b"\r\n\r\n")[0]
-                response_data = client_data.split(b"\r\n\r\n")[1]
+                response_header = host_data.split(b"\r\n\r\n")[0]
+                response_body = host_data.split(b"\r\n\r\n")[1]
+
+                if b'charset=' in response_header:
+                    charset = response_header
 
                 result['response_header'] = response_header
-                result['response_data'] = response_data
+                result['response_body'] = response_body
                 result['status_code'] = response_header.split(b"\r\n")[0].split(b' ')[1]
 
                 conn.close()
 
+                print(client_data)
+                print(host_data)
+
                 if self.fliter(result['path'], 'ext'):
                     continue
 
-                s = Sql(url.decode(), result['method'], result['request_data'])
+                s = Sql(url.decode(), result['method'], result['request_body'])
                 result['sqli'] = s.run()
 
                 print(result)

@@ -19,8 +19,13 @@ class Database:
                             'path varchar(64), '
                             'port varchar(6), '
                             'status_code varchar(3), '
-                            'sqli tinyint '
+                            'sqli tinyint, '
+                            'request_header text, ' 
+                            'request_body text, ' 
+                            'response_header text, ' 
+                            'response_body text ' 
                             ')')
+
         print("create database successfully")
 
     def insert(self, result):
@@ -31,10 +36,22 @@ class Database:
         port = result['port'].decode()
         status_code = result['status_code'].decode()
         sqli = result['sqli']
+        request_header = result['request_header'].decode()
+        if not result['request_body']:
+            request_body = result['request_body'].decode()
+        else:
+            request_body = ''
+        response_header = result['response_header'].decode()
+        if not result['request_body']:
+            response_body = result['response_body'].decode()
+        else:
+            response_body = ''
 
-        sql = "insert into result (url, scheme, host, path, port, status_code, sqli) " \
-              "values ('%s', '%s', '%s', '%s', '%s', '%s', '%s')"\
-              % (url, scheme, host, path, port, status_code, sqli)
+
+
+        sql = "insert into result (url, scheme, host, path, port, status_code, sqli, request_header, request_body, response_header, response_body) " \
+              "values ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')"\
+              % (url, scheme, host, path, port, status_code, sqli, request_header, request_body, response_header, response_body)
         self.cursor.execute(sql)
         self.conn.commit()
 
@@ -56,6 +73,10 @@ class Database:
             _result['port'] = result[5]
             _result['status_code'] = result[6]
             _result['sqli'] = result[7]
+            _result['request_header'] = result[8]
+            _result['request_body'] = result[9]
+            _result['response_header'] = result[10]
+            _result['response_body'] = result[11]
             _results.append(_result)
 
         self.clean()
@@ -75,6 +96,10 @@ class Database:
         _result['port'] = result[5]
         _result['status_code'] = result[6]
         _result['sqli'] = result[7]
+        _result['request_header'] = result[8]
+        _result['request_body'] = result[9]
+        _result['response_header'] = result[10]
+        _result['response_body'] = result[11]
 
         self.clean()
 

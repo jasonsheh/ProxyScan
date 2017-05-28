@@ -21,7 +21,7 @@ class Proxy:
         self.q = queue.Queue(0)
         self.host = '0.0.0.0'
         self.port = 8000
-        self.denies = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com', b'firefox.com']
+        self.denies = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com', b'mozilla.org', b'firefox.com']
         self.static_ext = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico']
 
         # 创建socket对象
@@ -39,13 +39,13 @@ class Proxy:
 
     def fliter(self, url, mode):
         flag = 0
-        if mode == 'host':
+        if mode == 'host' and url:
             for deny in self.denies:
                 if deny in url:
                     flag = 1
                     break
 
-        elif mode == 'ext':
+        elif mode == 'ext' and url:
             for ext in self.static_ext:
                 if url.endswith(ext):
                     flag = 1
@@ -61,18 +61,25 @@ class Proxy:
         while True:
             try:
                 conn, addr = self.proxy_sock.accept()
-                # print("client connect:{0}:{1}".format(addr[0], addr[1]))
 
                 # 发送的总数据
                 client_data = conn.recv(data_size)
 
+                # 必要处理
                 if not client_data:
                     continue
+                if b'Accept-Encoding: gzip, deflate' in client_data:
+                    client_data = client_data.replace(b'gzip, deflate', b'')
+                if client_data.find(b'Connection') >= 0:
+                    client_data = client_data.replace(b'keep-alive', b'close')
+                else:
+                    client_data += b'Connection: close\r\n'
+
+                # 拆分数据
+                request_header = client_data.split(b"\r\n\r\n")[0]
+                request_body = client_data.split(b"\r\n\r\n")[1]
 
                 # 分析得到 header 信息
-                request_header = client_data.split(b"\r\n\r\n")[0]
-                request_data = client_data.split(b"\r\n\r\n")[1]
-
                 headers = request_header.split(b'\r\n')
                 for _header in headers:
                     if b'Host:' in _header:
@@ -91,6 +98,7 @@ class Proxy:
                 # 统计访问记录
                 # print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())))
 
+                # 数据整理
                 result = {'url': url, 'request_header': request_header}
                 result['scheme'], result['host'], result['path'], \
                     result['params'], result['query'], result['fragment'] = urlparse(url)
@@ -101,59 +109,42 @@ class Proxy:
                     result['port'] = b'80'
 
                 result['method'] = client_data.split(b' ')[0]
-                result['request_data'] = request_data
+                result['request_body'] = request_body
 
-                if client_data.find(b'Connection') >= 0:
-                    client_data = client_data.replace(b'keep-alive', b'close')
-                else:
-                    client_data += b'Connection: close\r\n'
-
-                # 建立连接
-                if result['port'] == b'443':
-                    https_sock = ssl.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-                    https_sock.connect((host, 443))
-                    https_sock.settimeout(10)
-                    https_sock.sendall(client_data)
-                    host_data = b''
-                    while True:
-                        https_data = https_sock.recv(data_size)
-                        if https_data:
-                            host_data += https_data
-                            conn.sendall(https_data)
-                        else:
-                            break
-
-                    if not host_data:
-                        conn.close()
-                        continue
-                    https_sock.close()
-
-                else:
-                    http_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    http_sock.settimeout(10)
-                    http_sock.connect((host, int(result['port'])))
-                    http_sock.sendall(client_data)
-                    host_data = b''
-                    while True:
-                        http_data = http_sock.recv(data_size)
-                        if http_data:
-                            host_data += http_data
-                            conn.sendall(http_data)
-                        else:
-                            break
-
-                    if not host_data:
-                        conn.close()
-                        continue
-                    http_sock.close()
-
+                # 建立连接， 发送接收数据
+                http_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                http_sock.settimeout(20)
+                http_sock.connect((host, int(result['port'])))
+                http_sock.sendall(client_data)
+                host_data = b''
+                while True:
+                    http_data = http_sock.recv(data_size)
+                    if http_data:
+                        host_data += http_data
+                        conn.send(http_data)
+                    else:
+                        break
+                http_sock.close()
                 conn.close()
 
-                response_header = client_data.split(b"\r\n\r\n")[0]
-                response_data = client_data.split(b"\r\n\r\n")[1]
+                if not host_data:
+                    continue
+
+                response_header = host_data.split(b"\r\n\r\n")[0]
+                response_body = host_data.split(b"\r\n\r\n")[1]
+
+                if b'charset=' in response_header:
+                    charset = response_header.split(b'charset=')[1].split(b'\r\n')[0]
+                    if charset == (b'gb2312' or b'GBK'):
+                        response_body = response_body.decode(encoding='GBK').encode('utf-8')
+
+                if b'Content-Type: image/jpeg\n' in response_header:
+                    continue
+                if b'Content-Type: application/javascript\r\n' in response_header:
+                    continue
 
                 result['response_header'] = response_header
-                result['response_data'] = response_data
+                result['response_body'] = response_body
                 result['status_code'] = response_header.split(b"\r\n")[0].split(b' ')[1]
 
                 conn.close()
@@ -161,15 +152,12 @@ class Proxy:
                 if self.fliter(result['path'], 'ext'):
                     continue
 
-                s = Sql(url.decode(), result['method'], result['request_data'])
+                s = Sql(url.decode(), result['method'], result['request_body'])
                 result['sqli'] = s.run()
 
                 print(result)
                 Database().insert(result)
 
-            except BrokenPipeError:
-                conn.close()
-                continue
             except TimeoutError:
                 conn.close()
                 continue

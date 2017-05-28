@@ -61,7 +61,6 @@ class Proxy:
         while True:
             try:
                 conn, addr = self.proxy_sock.accept()
-                # print("client connect:{0}:{1}".format(addr[0], addr[1]))
 
                 # 发送的总数据
                 client_data = conn.recv(data_size)
@@ -113,60 +112,42 @@ class Proxy:
                 result['request_body'] = request_body
 
                 # 建立连接， 发送接收数据
-                if result['port'] == b'443':
-                    https_sock = ssl.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-                    https_sock.connect((host, 443))
-                    https_sock.settimeout(10)
-                    https_sock.sendall(client_data)
-                    host_data = b''
-                    while True:
-                        https_data = https_sock.recv(data_size)
-                        if https_data:
-                            host_data += https_data
-                            conn.sendall(https_data)
-                        else:
-                            break
-
-                    if not host_data:
-                        conn.close()
-                        continue
-                    https_sock.close()
-
-                else:
-                    http_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    http_sock.settimeout(10)
-                    http_sock.connect((host, int(result['port'])))
-                    http_sock.sendall(client_data)
-                    host_data = b''
-                    while True:
-                        http_data = http_sock.recv(data_size)
-                        if http_data:
-                            host_data += http_data
-                            conn.sendall(http_data)
-                        else:
-                            break
-
-                    if not host_data:
-                        conn.close()
-                        continue
-                    http_sock.close()
-
+                http_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                http_sock.settimeout(20)
+                http_sock.connect((host, int(result['port'])))
+                http_sock.sendall(client_data)
+                host_data = b''
+                while True:
+                    http_data = http_sock.recv(data_size)
+                    if http_data:
+                        host_data += http_data
+                        conn.send(http_data)
+                    else:
+                        break
+                http_sock.close()
                 conn.close()
+
+                if not host_data:
+                    continue
 
                 response_header = host_data.split(b"\r\n\r\n")[0]
                 response_body = host_data.split(b"\r\n\r\n")[1]
 
                 if b'charset=' in response_header:
-                    charset = response_header
+                    charset = response_header.split(b'charset=')[1].split(b'\r\n')[0]
+                    if charset == (b'gb2312' or b'GBK'):
+                        response_body = response_body.decode(encoding='GBK').encode('utf-8')
+
+                if b'Content-Type: image/jpeg\n' in response_header:
+                    continue
+                if b'Content-Type: application/javascript\r\n' in response_header:
+                    continue
 
                 result['response_header'] = response_header
                 result['response_body'] = response_body
                 result['status_code'] = response_header.split(b"\r\n")[0].split(b' ')[1]
 
                 conn.close()
-
-                print(client_data)
-                print(host_data)
 
                 if self.fliter(result['path'], 'ext'):
                     continue
@@ -177,9 +158,6 @@ class Proxy:
                 print(result)
                 Database().insert(result)
 
-            except BrokenPipeError:
-                conn.close()
-                continue
             except TimeoutError:
                 conn.close()
                 continue

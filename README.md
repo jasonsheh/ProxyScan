@@ -1,6 +1,6 @@
 # ProxyScan
 
-一个简单的被动式漏洞扫描器。存储基于sqlite3，web页面由flask实现，暂时只支持get类型sql注入检测
+一个简单的http被动漏洞扫描器。存储基于sqlite3，web页面由flask实现，暂时只支持get类型sql注入检测
 
 ## 使用方法
 

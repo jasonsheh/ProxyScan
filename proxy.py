@@ -5,14 +5,13 @@
 from database import Database
 from sqli import Sql
 
-import os
 import socket
 import sys
 import ssl
-import time
 import queue
+import gzip
+import zlib
 from urllib.parse import urlparse
-
 data_size = 2048
 
 
@@ -32,10 +31,23 @@ class Proxy:
         try:
             self.proxy_sock.bind((self.host, self.port))
         except Exception as e:
-            print('Error %s' % (e))
+            print('Error %s' % e)
             sys.exit("python proxy bind error ")
         print("python proxy open")
         self.proxy_sock.listen(10)
+
+    @staticmethod
+    def gzip(self, data):
+        buf = StringIO(data)
+        f = gzip.GzipFile(fileobj=buf)
+        return f.read()
+
+    @staticmethod
+    def deflate(self, data):
+        try:
+            return zlib.decompress(data, -zlib.MAX_WBITS)
+        except zlib.error:
+            return zlib.decompress(data)
 
     def fliter(self, url, mode):
         flag = 0
@@ -68,8 +80,11 @@ class Proxy:
                 # 必要处理
                 if not client_data:
                     continue
+                '''
                 if b'Accept-Encoding: gzip, deflate' in client_data:
                     client_data = client_data.replace(b'gzip, deflate', b'')
+                '''
+
                 if client_data.find(b'Connection') >= 0:
                     client_data = client_data.replace(b'keep-alive', b'close')
                 else:
@@ -116,22 +131,24 @@ class Proxy:
                 http_sock.settimeout(20)
                 http_sock.connect((host, int(result['port'])))
                 http_sock.sendall(client_data)
-                host_data = b''
+                server_data = b''
                 while True:
                     http_data = http_sock.recv(data_size)
                     if http_data:
-                        host_data += http_data
+                        server_data += http_data
                         conn.send(http_data)
                     else:
                         break
                 http_sock.close()
                 conn.close()
 
-                if not host_data:
+                if not server_data:
                     continue
 
-                response_header = host_data.split(b"\r\n\r\n")[0]
-                response_body = host_data.split(b"\r\n\r\n")[1]
+                if b'Accept-Encoding: gzip, deflate' in server_data:
+                    server_data = self.gizp(server_data)
+
+                response_header, response_body = server_data.split(b"\r\n\r\n", 1)
 
                 if b'charset=' in response_header:
                     charset = response_header.split(b'charset=')[1].split(b'\r\n')[0]
@@ -156,7 +173,7 @@ class Proxy:
                 result['sqli'] = s.run()
 
                 print(result)
-                Database().insert(result)
+                # Database().insert(result)
 
             except TimeoutError:
                 conn.close()
@@ -169,9 +186,5 @@ class Proxy:
         print("python proxy close")
 
 
-def main():
-    s = Proxy()
-    s.run()
-
 if __name__ == '__main__':
-    main()
+    Proxy().run()

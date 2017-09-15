@@ -37,36 +37,38 @@ class Proxy:
         self.proxy_sock.listen(10)
 
     @staticmethod
-    def gzip(self, data):
+    def gzip(data):
         buf = StringIO(data)
         f = gzip.GzipFile(fileobj=buf)
         return f.read()
 
     @staticmethod
-    def deflate(self, data):
+    def deflate(data):
         try:
             return zlib.decompress(data, -zlib.MAX_WBITS)
         except zlib.error:
             return zlib.decompress(data)
 
+    # 独立出解码函数以便复杂编码的处理
+    @staticmethod
+    def response_decode(response_header, response_body):
+        if b'charset=' in response_header:
+            charset = response_header.split(b'charset=')[1].split(b'\r\n')[0]
+            if charset == (b'gb2312' or b'GBK'):
+                response_body = response_body.decode(encoding='GBK').encode('utf-8')
+        return response_body
+
     def fliter(self, url, mode):
-        flag = 0
         if mode == 'host' and url:
             for deny in self.denies:
                 if deny in url:
-                    flag = 1
-                    break
+                    return True
 
         elif mode == 'ext' and url:
             for ext in self.static_ext:
                 if url.endswith(ext):
-                    flag = 1
-                    break
-
-        if flag:
-            return True
-        else:
-            return False
+                    return True
+        return False
 
     def run(self):
         self.connect_client()
@@ -89,16 +91,13 @@ class Proxy:
                     client_data = client_data.replace(b'keep-alive', b'close')
                 else:
                     client_data += b'Connection: close\r\n'
-
                 # 拆分数据
-                request_header = client_data.split(b"\r\n\r\n")[0]
-                request_body = client_data.split(b"\r\n\r\n")[1]
-
+                request_header, request_body = client_data.split(b"\r\n\r\n", 1)
                 # 分析得到 header 信息
                 headers = request_header.split(b'\r\n')
-                for _header in headers:
-                    if b'Host:' in _header:
-                        host = _header.split(b":")[1].strip()
+                for header in headers:
+                    if b'Host:' in header:
+                        host = header.split(b":")[1].strip()
 
                 url = headers[0].split(b" ")[1].strip()
                 if not url.startswith(b'http'):
@@ -142,22 +141,15 @@ class Proxy:
                 http_sock.close()
                 conn.close()
 
+                # 对返回数据进行处理
                 if not server_data:
                     continue
 
-                if b'Accept-Encoding: gzip, deflate' in server_data:
-                    server_data = self.gizp(server_data)
-
                 response_header, response_body = server_data.split(b"\r\n\r\n", 1)
+                # 好像没什么用
+                # response_body = self.response_decode(response_header, response_body)
 
-                if b'charset=' in response_header:
-                    charset = response_header.split(b'charset=')[1].split(b'\r\n')[0]
-                    if charset == (b'gb2312' or b'GBK'):
-                        response_body = response_body.decode(encoding='GBK').encode('utf-8')
-
-                if b'Content-Type: image/jpeg\n' in response_header:
-                    continue
-                if b'Content-Type: application/javascript\r\n' in response_header:
+                if self.fliter(result['path'], 'ext'):
                     continue
 
                 result['response_header'] = response_header
@@ -166,13 +158,12 @@ class Proxy:
 
                 conn.close()
 
-                if self.fliter(result['path'], 'ext'):
-                    continue
 
+                # 安全测试处理内容 之后交由celery入队列处理
                 s = Sql(url.decode(), result['method'], result['request_body'])
                 result['sqli'] = s.run()
 
-                print(result)
+                # print(result)
                 # Database().insert(result)
 
             except TimeoutError:

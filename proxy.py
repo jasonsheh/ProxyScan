@@ -79,24 +79,34 @@ class Proxy:
                     return True
         return False
 
-    def read_key_from_local(self):
-        with open("./cert/cert.pem", "rb") as key_file:
-            private_key = serialization.load_pem_private_key(
+    def create_fake_ca(self, host):
+        with open("./cert/cakey.pem", "rb") as key_file:
+            key = serialization.load_pem_private_key(
                 key_file.read(),
                 password=None,
                 backend=default_backend()
             )
-        return private_key
 
-    def create_fake_ca(self, host):
-        key = self.read_key_from_local()
-        subject = issuer = x509.Name([
+        issuer = x509.Name([
                     x509.NameAttribute(NameOID.COUNTRY_NAME, u"CN"),
-                    x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"TS"),
-                    x509.NameAttribute(NameOID.LOCALITY_NAME, u"TS"),
-                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"TS"),
-                    x509.NameAttribute(NameOID.COMMON_NAME, host),
+                    x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"Jiangsu"),
+                    x509.NameAttribute(NameOID.LOCALITY_NAME, u"Nanjing"),
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"ProxyScan"),
+                    x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, u"ProxyScan"),
+                    x509.NameAttribute(NameOID.COMMON_NAME, u"JasonSheh"),
+                    x509.NameAttribute(NameOID.EMAIL_ADDRESS, u"3039344@qq.com"),
                ])
+
+        subject = x509.Name([
+                    x509.NameAttribute(NameOID.COUNTRY_NAME, u"CN"),
+                    x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"Jiangsu"),
+                    x509.NameAttribute(NameOID.LOCALITY_NAME, u"Nanjing"),
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, host),
+                    x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, u"ProxyScan"),
+                    x509.NameAttribute(NameOID.COMMON_NAME, host),
+                    x509.NameAttribute(NameOID.EMAIL_ADDRESS, u"3039344@qq.com"),
+               ])
+
         cert = x509.CertificateBuilder().subject_name(
                subject
             ).issuer_name(
@@ -107,24 +117,28 @@ class Proxy:
                x509.random_serial_number()
             ).not_valid_before(
                datetime.datetime.utcnow()
+            ).add_extension(
+                x509.SubjectAlternativeName([x509.DNSName(host),]),
+                critical=False,
             ).not_valid_after(
-                 # Our certificate will be valid for 10 days
-               datetime.datetime.utcnow() + datetime.timedelta(days=10)
-            ).sign(key, hashes.SHA256(), default_backend())
+                 datetime.datetime.utcnow() + datetime.timedelta(days=365)
+            ).sign(
+                key, hashes.SHA256(), default_backend())
+
         # Write our certificate out to disk.
-        with open("./cert/website/"+str(host)+".pem", "wb") as f:
+        with open("./cert/website/"+host+".pem", "wb") as f:
             f.write(cert.public_bytes(serialization.Encoding.PEM))
 
     def receive_https_data_from_client(self, conn, host):
+        conn.sendall(b'HTTP/1.1 200 Connection Established\r\n\r\n')
         context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-        # context.load_cert_chain(certfile="key.crt", keyfile="key.pem")
-        print(host)
-        context.load_cert_chain(certfile='./cert/website/'+host+'.pem', keyfile='./cert/cert.key')
+        context.load_cert_chain(certfile='./cert/website/'+host+'.pem', keyfile='./cert/cakey.pem')
         connstream = context.wrap_socket(conn, server_side=True)
         client_data = b''
         while True:
             https_data = connstream.recv(4096)
             if https_data:
+                print(b'data'+https_data)
                 client_data += https_data
             else:
                 break
@@ -134,10 +148,8 @@ class Proxy:
 
     def send_https_data_to_server(self, host, port, client_data):
         https_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        https_sock.settimeout(20)
         https_sock.connect((host, port))
         context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-        context.load_cert_chain(certfile='CA.crt')
         https_sock = context.wrap_socket(https_sock, server_side=True)
         https_sock.sendall(client_data)
 
@@ -223,7 +235,6 @@ class Proxy:
 
                 if b':' in result['host']:
                     result['host'], result['port'] = result['host'].rsplit(b':')
-                    result['port'] = result['host'].rsplit(b':')
                 else:
                     result['port'] = b'80'
 
@@ -231,11 +242,9 @@ class Proxy:
                 result['request_body'] = request_body
 
                 if result['method'] == b'CONNECT':
-                    conn.sendall(b'HTTP/1.1 200 Connection established\r\n\r\n')
                     self.create_fake_ca(result['host'].decode())
 
                     client_data = self.receive_https_data_from_client(conn, result['host'].decode())
-                    print(client_data)
                     https_sock = self.send_https_data_to_server(host, int(result['port']), client_data)
                     self.receive_https_data_from_server(https_sock, conn)
                     continue

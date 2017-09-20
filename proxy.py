@@ -21,7 +21,7 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
-data_size = 2048
+data_size = 4096
 
 
 class Proxy:
@@ -134,37 +134,33 @@ class Proxy:
         context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
         context.load_cert_chain(certfile='./cert/website/'+host+'.pem', keyfile='./cert/cakey.pem')
         connstream = context.wrap_socket(conn, server_side=True)
-        client_data = b''
-        while True:
-            https_data = connstream.recv(4096)
-            if https_data:
-                print(b'data'+https_data)
-                client_data += https_data
-            else:
-                break
+        client_data = connstream.recv(data_size)
 
-        print(client_data)
-        return client_data
+        return client_data, connstream
 
     def send_https_data_to_server(self, host, port, client_data):
         https_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        https_sock.connect((host, port))
         context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-        https_sock = context.wrap_socket(https_sock, server_side=True)
+        # context.load_default_certs()
+
+        https_sock = context.wrap_socket(https_sock)
+        https_sock.connect((host, port))
+
         https_sock.sendall(client_data)
 
         return https_sock
 
     def receive_https_data_from_server(self, https_sock, conn):
-        http_data = b''
+        https_sock.settimeout(3)
+        https_data = b''
         while True:
-            server_data = https_sock.recv(data_size)
-            if server_data:
-                http_data += server_data
+            try:
+                server_data = https_sock.recv(data_size)
+                https_data += server_data
                 conn.send(server_data)
-            else:
+            except socket.timeout:
                 break
-        return http_data
+        return https_data
 
     # http
     def send_http_data_to_server(self, host, port, client_data):
@@ -207,7 +203,7 @@ class Proxy:
                 else:
                     client_data += b'Connection: close\r\n'
                 # 拆分数据
-                print(client_data)
+                # print(client_data)
                 request_header, request_body = client_data.split(b"\r\n\r\n", 1)
                 # 分析得到 header 信息
                 headers = request_header.split(b'\r\n')
@@ -244,17 +240,16 @@ class Proxy:
                 if result['method'] == b'CONNECT':
                     self.create_fake_ca(result['host'].decode())
 
-                    client_data = self.receive_https_data_from_client(conn, result['host'].decode())
-                    https_sock = self.send_https_data_to_server(host, int(result['port']), client_data)
-                    self.receive_https_data_from_server(https_sock, conn)
-                    continue
+                    client_data, conn = self.receive_https_data_from_client(conn, host.decode())
+                    https_sock = self.send_https_data_to_server(host.decode(), int(result['port']), client_data)
+                    server_data = self.receive_https_data_from_server(https_sock, conn)
+                    https_sock.close()
+                else:
 
-
-                # 建立连接， 发送接收数据
-                http_sock = self.send_http_data_to_server(host, int(result['port']), client_data)
-                server_data = self.receive_http_data_from_server(http_sock, conn)
-            
-                http_sock.close()
+                    # 建立连接， 发送接收数据
+                    http_sock = self.send_http_data_to_server(host.decode(), int(result['port']), client_data)
+                    server_data = self.receive_http_data_from_server(http_sock, conn)
+                    http_sock.close()
                 conn.close()
 
                 # 对返回数据进行处理
@@ -285,6 +280,7 @@ class Proxy:
                 conn.close()
                 continue
             except KeyboardInterrupt:
+                conn.close()
                 break
 
         # 关闭所有连接

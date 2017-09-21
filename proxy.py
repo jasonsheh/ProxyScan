@@ -7,6 +7,7 @@ from database import Database
 from sqli import Sql
 
 import socket
+import select
 import sys
 import ssl
 import queue
@@ -26,11 +27,15 @@ data_size = 4096
 
 class Proxy:
     def __init__(self):
-        self.q = queue.Queue(0)
+        # self.q = queue.Queue(0)
         self.host = '0.0.0.0'
         self.port = 8080
         self.denies = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com', b'mozilla.org', b'firefox.com']
         self.static_ext = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico']
+        self.result = {}
+        #self.epoll = select.epoll()
+        #self.epoll.register(serversocket.fileno(), select.EPOLLIN)
+
 
         # 创建socket对象
         # self.https_sock = ssl.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
@@ -43,7 +48,8 @@ class Proxy:
             print('Error %s' % e)
             sys.exit("python proxy bind error ")
         print("python proxy open")
-        self.proxy_sock.listen(10)
+        self.proxy_sock.listen(20)
+        # self.proxy_sock.setblocking(0)
 
     @staticmethod
     def gzip(data):
@@ -181,100 +187,96 @@ class Proxy:
                 break
         return http_data
 
+    def client_data_analysis(self, client_data):
+        request_header, request_body = client_data.split(b"\r\n\r\n", 1)
+
+        headers = request_header.split(b'\r\n')
+
+        url = headers[0].split(b" ")[1].strip()
+        if not url.startswith(b'http'):
+            if b':443' in url:
+                url = b'https://' + url
+            else:
+                url = b'http://' + url
+
+        self.result = {'url': url, 'request_header': request_header}
+        self.result['scheme'], self.result['host'], self.result['path'], \
+        self.result['params'], self.result['query'], self.result['fragment'] = urlparse(url)
+
+        if b':' in self.result['host']:
+            self.result['host'], self.result['port'] = self.result['host'].rsplit(b':')
+        else:
+            self.result['port'] = b'80'
+
+        self.result['method'] = client_data.split(b' ')[0]
+        self.result['request_body'] = request_body
+
+    def server_data_analysis(self, server_data):
+        response_header, response_body = server_data.split(b"\r\n\r\n", 1)
+
+        self.result['response_header'] = response_header
+        self.result['response_body'] = response_body
+        self.result['status_code'] = response_header.split(b"\r\n")[0].split(b' ')[1]
+
     def run(self):
         self.connect_client()
         while True:
             try:
                 conn, addr = self.proxy_sock.accept()
-
-                # 发送的总数据
                 client_data = conn.recv(data_size)
 
                 # 必要处理
                 if not client_data:
                     continue
-                '''
-                if b'Accept-Encoding: gzip, deflate' in client_data:
-                    client_data = client_data.replace(b'gzip, deflate', b'')
-                '''
 
+                # 短连接
                 if client_data.find(b'Connection') >= 0:
                     client_data = client_data.replace(b'keep-alive', b'close')
                 else:
                     client_data += b'Connection: close\r\n'
                 # 拆分数据
                 # print(client_data)
-                request_header, request_body = client_data.split(b"\r\n\r\n", 1)
-                # 分析得到 header 信息
-                headers = request_header.split(b'\r\n')
-                for header in headers:
-                    if b'Host:' in header:
-                        host = header.split(b":")[1].strip()
+                self.client_data_analysis(client_data)
 
-                url = headers[0].split(b" ")[1].strip()
-                if not url.startswith(b'http'):
-                    if b':443' in url:
-                        url = b'https://'+url
-                    else:
-                        url = b'http://'+url
-
-                if self.fliter(url, 'host'):
+                if self.fliter(self.result['host'], 'host'):
                     continue
 
                 # 统计访问记录
                 # print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())))
 
                 # 数据整理
-                result = {'url': url, 'request_header': request_header}
-                result['scheme'], result['host'], result['path'], \
-                    result['params'], result['query'], result['fragment'] = urlparse(url)
 
-                if b':' in result['host']:
-                    result['host'], result['port'] = result['host'].rsplit(b':')
-                else:
-                    result['port'] = b'80'
+                if self.result['method'] == b'CONNECT':
+                    self.create_fake_ca(self.result['host'].decode())
 
-                result['method'] = client_data.split(b' ')[0]
-                result['request_body'] = request_body
-
-                if result['method'] == b'CONNECT':
-                    self.create_fake_ca(result['host'].decode())
-
-                    client_data, conn = self.receive_https_data_from_client(conn, host.decode())
-                    https_sock = self.send_https_data_to_server(host.decode(), int(result['port']), client_data)
+                    client_data, conn = self.receive_https_data_from_client(conn, self.result['host'].decode())
+                    https_sock = self.send_https_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
                     server_data = self.receive_https_data_from_server(https_sock, conn)
                     https_sock.close()
                 else:
 
                     # 建立连接， 发送接收数据
-                    http_sock = self.send_http_data_to_server(host.decode(), int(result['port']), client_data)
+                    http_sock = self.send_http_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
                     server_data = self.receive_http_data_from_server(http_sock, conn)
                     http_sock.close()
                 conn.close()
 
+                if self.fliter(self.result['path'], 'ext'):
+                    continue
                 # 对返回数据进行处理
                 if not server_data:
                     continue
 
-                response_header, response_body = server_data.split(b"\r\n\r\n", 1)
-                # 好像没什么用
-                # response_body = self.response_decode(response_header, response_body)
-
-                if self.fliter(result['path'], 'ext'):
-                    continue
-
-                result['response_header'] = response_header
-                result['response_body'] = response_body
-                result['status_code'] = response_header.split(b"\r\n")[0].split(b' ')[1]
+                self.server_data_analysis(server_data)
 
                 conn.close()
 
                 # 安全测试处理内容 之后交由celery入队列处理
 
-                # result['sqli'] = Sql(url.decode(), result['method'], result['request_body']).run()
+                # self.result['sqli'] = Sql(url.decode(), self.result['method'], self.result['request_body']).run()
 
-                # print(result)
-                # Database().insert(result)
+                # print(self.result)
+                # Database().insert(self.result)
 
             except TimeoutError:
                 conn.close()

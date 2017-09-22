@@ -7,6 +7,7 @@ from database import Database
 from sqli import Sql
 
 import socket
+import os
 import select
 import sys
 import ssl
@@ -15,6 +16,7 @@ import gzip
 import zlib
 import random
 import datetime
+import threading
 from urllib.parse import urlparse
 
 from cryptography import x509
@@ -157,15 +159,17 @@ class Proxy:
         return https_sock
 
     def receive_https_data_from_server(self, https_sock, conn):
-        https_sock.settimeout(3)
         https_data = b''
-        while True:
-            try:
+        try:
+            while True:
                 server_data = https_sock.recv(data_size)
-                https_data += server_data
-                conn.send(server_data)
-            except socket.timeout:
-                break
+                if server_data:
+                    https_data += server_data
+                    conn.send(server_data)
+                else:
+                    break
+        except Exception as e:
+            print(e, https_data)
         return https_data
 
     # http
@@ -188,28 +192,29 @@ class Proxy:
         return http_data
 
     def client_data_analysis(self, client_data):
-        request_header, request_body = client_data.split(b"\r\n\r\n", 1)
+        if b'\r\n\r\n' in client_data:
+            request_header, request_body = client_data.split(b"\r\n\r\n", 1)
 
-        headers = request_header.split(b'\r\n')
+            headers = request_header.split(b'\r\n')
 
-        url = headers[0].split(b" ")[1].strip()
-        if not url.startswith(b'http'):
-            if b':443' in url:
-                url = b'https://' + url
+            url = headers[0].split(b" ")[1].strip()
+            if not url.startswith(b'http'):
+                if b':443' in url:
+                    url = b'https://' + url
+                else:
+                    url = b'http://' + url
+
+            self.result = {'url': url, 'request_header': request_header}
+            self.result['scheme'], self.result['host'], self.result['path'], \
+            self.result['params'], self.result['query'], self.result['fragment'] = urlparse(url)
+
+            if b':' in self.result['host']:
+                self.result['host'], self.result['port'] = self.result['host'].rsplit(b':')
             else:
-                url = b'http://' + url
+                self.result['port'] = b'80'
 
-        self.result = {'url': url, 'request_header': request_header}
-        self.result['scheme'], self.result['host'], self.result['path'], \
-        self.result['params'], self.result['query'], self.result['fragment'] = urlparse(url)
-
-        if b':' in self.result['host']:
-            self.result['host'], self.result['port'] = self.result['host'].rsplit(b':')
-        else:
-            self.result['port'] = b'80'
-
-        self.result['method'] = client_data.split(b' ')[0]
-        self.result['request_body'] = request_body
+            self.result['method'] = client_data.split(b' ')[0]
+            self.result['request_body'] = request_body
 
     def server_data_analysis(self, server_data):
         response_header, response_body = server_data.split(b"\r\n\r\n", 1)
@@ -223,80 +228,75 @@ class Proxy:
         while True:
             try:
                 conn, addr = self.proxy_sock.accept()
-                client_data = conn.recv(data_size)
+                t = threading.Thread(target=self.proxy, args=(conn, ))
+                t.start()
+            except KeyboardInterrupt:
+                self.proxy_sock.close()
+                print("python proxy close")
+                break
 
-                # 必要处理
-                if not client_data:
-                    continue
+    def proxy(self, conn):
+            client_data = conn.recv(data_size)
 
-                # 短连接
+            # 必要处理
+            if not client_data:
+                pass
+
+            # 短连接
+            if client_data.find(b'Connection') >= 0:
+                client_data = client_data.replace(b'keep-alive', b'close')
+            else:
+                client_data += b'Connection: close\r\n'
+            # 拆分数据
+            # print(client_data)
+            self.client_data_analysis(client_data)
+
+            if self.fliter(self.result['host'], 'host'):
+                pass
+
+            # 统计访问记录
+            # print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())))
+
+            # 数据整理
+
+            if self.result['method'] == b'CONNECT':
+                if not os.path.exists("./cert/website/"+self.result['host'].decode()+".pem"):
+                    self.create_fake_ca(self.result['host'].decode())
+
+                client_data, conn = self.receive_https_data_from_client(conn, self.result['host'].decode())
+
                 if client_data.find(b'Connection') >= 0:
                     client_data = client_data.replace(b'keep-alive', b'close')
                 else:
                     client_data += b'Connection: close\r\n'
-                # 拆分数据
-                # print(client_data)
-                self.client_data_analysis(client_data)
 
-                if self.fliter(self.result['host'], 'host'):
-                    continue
+                https_sock = self.send_https_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
+                server_data = self.receive_https_data_from_server(https_sock, conn)
+                https_sock.close()
+            else:
 
-                # 统计访问记录
-                # print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())))
+                # 建立连接， 发送接收数据
+                http_sock = self.send_http_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
+                server_data = self.receive_http_data_from_server(http_sock, conn)
+                http_sock.close()
+            conn.close()
 
-                # 数据整理
+            if self.fliter(self.result['path'], 'ext'):
+                pass
+            # 对返回数据进行处理
+            if not server_data:
+                pass
 
-                if self.result['method'] == b'CONNECT':
-                    self.create_fake_ca(self.result['host'].decode())
+            self.server_data_analysis(server_data)
 
-                    client_data, conn = self.receive_https_data_from_client(conn, self.result['host'].decode())
-                    https_sock = self.send_https_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
-                    server_data = self.receive_https_data_from_server(https_sock, conn)
-                    https_sock.close()
-                else:
+            conn.close()
 
-                    # 建立连接， 发送接收数据
-                    http_sock = self.send_http_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
-                    server_data = self.receive_http_data_from_server(http_sock, conn)
-                    http_sock.close()
-                conn.close()
+            # 安全测试处理内容 之后交由celery入队列处理
 
-                if self.fliter(self.result['path'], 'ext'):
-                    continue
-                # 对返回数据进行处理
-                if not server_data:
-                    continue
+            # self.result['sqli'] = Sql(url.decode(), self.result['method'], self.result['request_body']).run()
 
-                self.server_data_analysis(server_data)
-
-                conn.close()
-
-                # 安全测试处理内容 之后交由celery入队列处理
-
-                # self.result['sqli'] = Sql(url.decode(), self.result['method'], self.result['request_body']).run()
-
-                # print(self.result)
-                # Database().insert(self.result)
-
-            except TimeoutError:
-                conn.close()
-                continue
-            except KeyboardInterrupt:
-                conn.close()
-                break
-
-        # 关闭所有连接
-        self.proxy_sock.close()
-        print("python proxy close")
-
-
-def gen_rand_serial(length):
-    num = ''
-    nlist = random.sample(['1', '2', '3', '4', '5', '6', '7', '9', '0', 'a', 'b', 'c', 'd', 'e', 'f'], length)
-    for n in nlist:
-        num += str(n)
-    return int(num.encode('hex'), 16)
-
+            # print(self.result)
+            # Database().insert(self.result)
 
 
 if __name__ == '__main__':

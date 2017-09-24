@@ -31,8 +31,9 @@ class Proxy:
     def __init__(self):
         # self.q = queue.Queue(0)
         self.host = '0.0.0.0'
-        self.port = 8080
-        self.denies = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com', b'mozilla.org', b'firefox.com']
+        self.port = 8000
+        self.denies = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com', b'mozilla.org', b'firefox.com',
+                       b'cnzz.com', b'google-analytics.com']
         self.static_ext = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico']
         self.result = {}
         self.ca_lock = threading.Lock()
@@ -85,7 +86,8 @@ class Proxy:
         elif mode == 'ext' and url:
             for ext in self.static_ext:
                 if url.endswith(ext):
-                    return True
+                    return url
+
         return False
 
     def create_fake_ca(self, host):
@@ -192,15 +194,15 @@ class Proxy:
     def receive_http_data_from_server(self, http_sock, conn):
         http_data = b''
         while True:
-            server_data = http_sock.recv(data_size)
-            if server_data:
-                http_data += server_data
-                try:
+            try:
+                server_data = http_sock.recv(data_size)
+                if server_data:
+                    http_data += server_data
                     conn.send(server_data)
-                except:
-                    print(server_data)
-            else:
-                break
+                else:
+                    break
+            except:
+                print(server_data)
         return http_data
 
     def client_data_analysis(self, client_data):
@@ -215,6 +217,32 @@ class Proxy:
                     url = b'https://' + url
                 else:
                     url = b'http://' + url
+
+            self.result = {'url': url, 'request_header': request_header}
+            self.result['scheme'], self.result['host'], self.result['path'], \
+            self.result['params'], self.result['query'], self.result['fragment'] = urlparse(url)
+
+            if b':' in self.result['host']:
+                self.result['host'], self.result['port'] = self.result['host'].rsplit(b':')
+            else:
+                self.result['port'] = b'80'
+
+            self.result['method'] = client_data.split(b' ')[0]
+            self.result['request_body'] = request_body
+
+    def https_client_data_analysis(self, client_data):
+        if b'\r\n\r\n' in client_data:
+            request_header, request_body = client_data.split(b"\r\n\r\n", 1)
+
+            headers = request_header.split(b'\r\n')
+
+            path = headers[0].split(b" ")[1].strip()
+            host = headers[1].split(b" ")[1].strip()
+
+            if b':443' in host:
+                url = b'https://' + host + path
+            else:
+                url = b'http://' + host + path
 
             self.result = {'url': url, 'request_header': request_header}
             self.result['scheme'], self.result['host'], self.result['path'], \
@@ -249,17 +277,17 @@ class Proxy:
                 break
 
     def proxy(self, conn):
-            client_data = conn.recv(data_size)
+        client_data = conn.recv(data_size)
 
-            # 必要处理
-            if not client_data:
-                return
+        # 实际上没用, 没想好怎么处理
+        if not client_data:
+            return
 
-            # print(client_data)
-            self.client_data_analysis(client_data)
+        # print(client_data)
+        self.client_data_analysis(client_data)
 
-            if self.fliter(self.result['host'], 'host'):
-                return
+        # 同样 实际上没用, 没想好怎么处理
+        if not self.fliter(self.result['host'], 'host'):
 
             # 统计访问记录
             # print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())))
@@ -293,29 +321,27 @@ class Proxy:
                 https_sock = self.send_https_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
                 server_data = self.receive_https_data_from_server(https_sock, conn)
                 https_sock.close()
+
+                if not server_data:
+                    return
+                self.https_client_data_analysis(client_data)
+
             else:
 
                 # 建立连接， 发送接收数据
                 http_sock = self.send_http_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
                 server_data = self.receive_http_data_from_server(http_sock, conn)
                 http_sock.close()
-            conn.close()
-
-            if self.fliter(self.result['path'], 'ext'):
-                return
-            # 对返回数据进行处理
-            if not server_data:
-                return
-
-            self.server_data_analysis(server_data)
 
             conn.close()
+            if not self.fliter(self.result['path'], 'ext') and server_data and self.result['method'] != b'CONNECT':
+                self.server_data_analysis(server_data)
+                print(self.result['host'], self.result)
+
 
             # 安全测试处理内容 之后交由celery入队列处理
 
             # self.result['sqli'] = Sql(url.decode(), self.result['method'], self.result['request_body']).run()
-
-            # print(self.result)
             # Database().insert(self.result)
 
 

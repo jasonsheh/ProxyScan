@@ -26,10 +26,8 @@ def detail(_id):
     result = Database().select_detail(_id)
     return render_template('detail.html',
                            result=result,
-                           request_header=result['request_header'].split('\r\n'),
-                           request_body=result['request_body'].split('\r\n'),
-                           response_header=result['response_header'].split('\r\n'),
-                           response_body=result['response_body'].split('\r\n'))
+                           request_header=result['request_header'].split(r'\r\n'),
+                           response_header=result['response_header'].split(r'\r\n'),)
 
 
 if __name__ == '__main__':

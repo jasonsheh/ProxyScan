@@ -44,32 +44,30 @@
 
 
 <div class="container">
-
 <table class="table table-striped" cellspacing="0" width="100%">
-<thead>
-<tr>
-    <th>ID</th>
-    <th>Host</th>
-    <th>Scheme</th>
-    <th>Path</th>
-    <th>Port</th>
-    <th>Status</th>
-</tr>
-</thead>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Host</th>
+            <th>Scheme</th>
+            <th>Path</th>
+            <th>Query</th>
+            <th>Port</th>
+            <th>Status</th>
+        </tr>
+    </thead>
     <tbody>
-
-{% for result in results %}
-<tr>
-  <td><a href="/detail/{{result.id}}">{{result.id}}</a></td>
-<td>{{result.host | truncate(40, True)}}</td>
-<td>{{result.scheme}}</td>
-<td>{{result.path | truncate(40, True)}}</td>
-<td>{{result.port}}</td>
-<td>{{result.status_code}}</td>
-<td>
-
-{% endfor %}
-
+        {% for result in results %}
+        <tr>
+            <td>{{result.id}}</td>
+            <td><a href="/detail/{{result.id}}">{{result.host | truncate(40, True)}}</a></td>
+            <td>{{result.scheme}}</td>
+            <td>{{result.path | truncate(40, True)}}</td>
+            <td>{{result.query}}</td>
+            <td>{{result.port}}</td>
+            <td>{{result.status_code}}</td>
+        </tr>
+        {% endfor %}
     </tbody>
 </table>
 

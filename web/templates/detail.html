@@ -125,9 +125,7 @@
               <div class="form-group">
                 <label class="col-sm-1 control-label">HTTP Header</label>
                 <div class="col-sm-8">
-                    <textarea class="form-control" rows="10">
-                    {% for header in request_header %}
-                        {{ header }}
+                    <textarea class="form-control" rows="15">{% for header in request_header %}{{ header }}{% endfor %}
                     </textarea>
                 </div>
               </div>
@@ -135,12 +133,7 @@
               <div class="form-group">
                 <label class="col-sm-1 control-label">Query String</label>
                 <div class="col-sm-8">
-                    <textarea class="form-control" rows="5">
-                    {% if result.request_data %}
-                        {% for header in request_data %}
-                        {{ header }}
-                    {% endif %}
-                    </textarea>
+                    <textarea class="form-control" rows="5">{{ result.request_body }}</textarea>
                 </div>
               </div>
             </form>
@@ -152,26 +145,19 @@
         <br>
 
         <form class="form-horizontal" role="form">
-
             <div class="form-group">
                 <label class="col-sm-1 control-label">Response Header</label>
-            <div class="col-sm-8">
-                <textarea class="form-control" rows="8">
-                    {% for header in response_header %}
-                        {{ header }}
-                </textarea>
+                <div class="col-sm-8">
+                    <textarea class="form-control" rows="9">{% for header in response_header %}{{ header }}{% endfor %}
+                    </textarea>
                 </div>
-              </div>
+            </div>
 
             <div class="form-group">
                 <label class="col-sm-1 control-label">Response Content</label>
-                <div class="col-sm-8">
-                    <textarea class="form-control" rows="12">
-                    {% if request_data %}
-                        {% for data in response_data %}
-                        {{ data }}
-                    {% endif %}</textarea>
-                </div>
+                    <div class="col-sm-8">
+                        <textarea class="form-control" rows="13">{{ result.response_body }}</textarea>
+                    </div>
               </div>
 
         </form>

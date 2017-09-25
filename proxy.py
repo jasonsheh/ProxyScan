@@ -11,12 +11,11 @@ import os
 import select
 import sys
 import ssl
-import queue
 import gzip
 import zlib
-import random
 import datetime
 import threading
+import re
 from urllib.parse import urlparse
 
 from cryptography import x509
@@ -33,8 +32,8 @@ class Proxy:
         self.host = '0.0.0.0'
         self.port = 8000
         self.denies = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com', b'mozilla.org', b'firefox.com',
-                       b'cnzz.com', b'google-analytics.com']
-        self.static_ext = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico']
+                       b'cnzz.com', b'google-analytics.com', b'tianqi.com']
+        self.static_ext = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico', b'.swf', b'.jpeg']
         self.result = {}
         self.ca_lock = threading.Lock()
         #self.epoll = select.epoll()
@@ -117,22 +116,40 @@ class Proxy:
                     x509.NameAttribute(NameOID.COMMON_NAME, host),
                     x509.NameAttribute(NameOID.EMAIL_ADDRESS, u"3039344@qq.com"),
                ])
-
-        cert = x509.CertificateBuilder().subject_name(
-               subject
+        if host.startswith('*.'):
+            cert = x509.CertificateBuilder().subject_name(
+                   subject
+                ).issuer_name(
+                   issuer
+                ).public_key(
+                   key.public_key()
+                ).serial_number(
+                   x509.random_serial_number()
+                ).not_valid_before(
+                   datetime.datetime.utcnow()
+                ).add_extension(
+                    x509.SubjectAlternativeName([x509.DNSName(host), ]),
+                    critical=False,
+                ).not_valid_after(
+                     datetime.datetime.utcnow() + datetime.timedelta(days=365)
+                ).sign(
+                    key, hashes.SHA256(), default_backend())
+        else:
+            cert = x509.CertificateBuilder().subject_name(
+                subject
             ).issuer_name(
-               issuer
+                issuer
             ).public_key(
-               key.public_key()
+                key.public_key()
             ).serial_number(
-               x509.random_serial_number()
+                x509.random_serial_number()
             ).not_valid_before(
-               datetime.datetime.utcnow()
+                datetime.datetime.utcnow()
             ).add_extension(
-                x509.SubjectAlternativeName([x509.DNSName(host), ]),
+                x509.SubjectAlternativeName([x509.DNSName(host), x509.DNSName('*.'+host)]),
                 critical=False,
             ).not_valid_after(
-                 datetime.datetime.utcnow() + datetime.timedelta(days=365)
+                datetime.datetime.utcnow() + datetime.timedelta(days=365)
             ).sign(
                 key, hashes.SHA256(), default_backend())
 
@@ -263,6 +280,11 @@ class Proxy:
             self.result['response_header'] = response_header
             self.result['response_body'] = response_body
             self.result['status_code'] = response_header.split(b"\r\n")[0].split(b' ')[1]
+            if b'charset=' in server_data:
+                pattern = re.compile('charset=(.*?).*?\\\\r\\\\n')
+                self.result['charset'] = re.findall(pattern, str(server_data))[0]
+            else:
+                self.result['charset'] = ''
 
     def run(self):
         self.connect_client()
@@ -310,21 +332,19 @@ class Proxy:
                         self.ca_lock.release()
 
                 client_data, conn = self.receive_https_data_from_client(conn, host)
-                if not client_data:
-                    return
+                if client_data:
+                    if client_data.find(b'Connection') >= 0:
+                        client_data = client_data.replace(b'keep-alive', b'close')
+                    else:
+                        client_data += b'Connection: close\r\n'
 
-                if client_data.find(b'Connection') >= 0:
-                    client_data = client_data.replace(b'keep-alive', b'close')
-                else:
-                    client_data += b'Connection: close\r\n'
+                    https_sock = self.send_https_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
+                    server_data = self.receive_https_data_from_server(https_sock, conn)
+                    https_sock.close()
 
-                https_sock = self.send_https_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
-                server_data = self.receive_https_data_from_server(https_sock, conn)
-                https_sock.close()
-
-                if not server_data:
-                    return
-                self.https_client_data_analysis(client_data)
+                    if not server_data:
+                        return
+                    self.https_client_data_analysis(client_data)
 
             else:
 
@@ -339,10 +359,10 @@ class Proxy:
                 print(self.result['host'], self.result)
 
 
-            # 安全测试处理内容 之后交由celery入队列处理
-
-            # self.result['sqli'] = Sql(url.decode(), self.result['method'], self.result['request_body']).run()
-            # Database().insert(self.result)
+                # 安全测试处理内容 之后交由celery入队列处理
+                # Sql(url.decode(), self.result['method'], self.result['request_body']).run()
+                self.result['sqli'] = ''
+                Database().insert(self.result)
 
 
 if __name__ == '__main__':

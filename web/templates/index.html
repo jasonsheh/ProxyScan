@@ -21,25 +21,32 @@
 
 <!-- Static navbar -->
 <nav class="navbar navbar-inverse">
-<div class="container">
-<div class="navbar-header">
-  <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
-    <span class="sr-only">Toggle navigation</span>
-    <span class="icon-bar"></span>
-    <span class="icon-bar"></span>
-    <span class="icon-bar"></span>
-  </button>
-  <a class="navbar-brand" href="/">PROXY Dashboard</a>
-</div>
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+                <span class="sr-only">Toggle navigation</span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">PROXY Dashboard</a>
+        </div>
 
-<div id="navbar" class="navbar-collapse collapse">
-<ul class="nav navbar-nav navbar-right">
-    <li><a href="/settings">系统设置</a></li>
-    <li><a href="https://github.com/jasonsheh/ProxyScan" target="_blank">帮助</a></li>
-  </ul>
-
-</div>
-</div>
+        <div id="navbar" class="navbar-collapse collapse">
+            <ul class="nav navbar-nav navbar-right">
+                <form class="navbar-form navbar-left" action="/search" method=post>
+                    <div class="input-group">
+                        <input type="text" class="form-control" placeholder="Search host" name="host">
+                        <span class="input-group-btn">
+                            <button class="btn btn-default" type="button">Go!</button>
+                        </span>
+                    </div>
+                </form>
+                <li><a href="/settings">系统设置</a></li>
+                <li><a href="https://github.com/jasonsheh/ProxyScan" target="_blank">帮助</a></li>
+            </ul>
+        </div>
+    </div>
 </nav>
 
 
@@ -63,7 +70,7 @@
             <td><a href="/detail/{{result.id}}">{{result.host | truncate(40, True)}}</a></td>
             <td>{{result.scheme}}</td>
             <td>{{result.path | truncate(40, True)}}</td>
-            <td>{{result.query}}</td>
+            <td>{{result.query | truncate(40, True)}}</td>
             <td>{{result.port}}</td>
             <td>{{result.status_code}}</td>
         </tr>

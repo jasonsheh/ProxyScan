@@ -4,7 +4,7 @@
 # -*- coding:utf-8 -*-
 
 from database import Database
-from sqli import Sql
+from scan import Scan
 
 import socket
 import os
@@ -360,6 +360,7 @@ class Proxy:
 
 
                 # 安全测试处理内容 之后交由celery入队列处理
+                # Scan(self.result).run()
                 # Sql(url.decode(), self.result['method'], self.result['request_body']).run()
                 self.result['sqli'] = ''
                 Database().insert(self.result)

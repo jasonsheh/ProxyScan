@@ -11,7 +11,11 @@ class Database:
         self.cursor = self.conn.cursor()
 
     def create_database(self):
-        self.cursor.execute('create table result('
+        self.create_proxy_result()
+        self.create_scan_result()
+
+    def create_proxy_result(self):
+        self.cursor.execute('create table proxy('
                             'id integer primary key, '
                             'url varchar(255), '
                             'scheme varchar(10), '
@@ -29,7 +33,7 @@ class Database:
                             'response_body text ' 
                             ')')
 
-        print("create database successfully")
+        print("create proxy successfully")
 
     def insert(self, result):
         url = result['url'].decode()
@@ -54,7 +58,7 @@ class Database:
         else:
             response_body = str(result['response_body'])[2:-1]
 
-        sql = "insert into result (url, scheme, host, path, port, query, status_code, charset, method, " \
+        sql = "insert into proxy (url, scheme, host, path, port, query, status_code, charset, method, " \
               "sqli, request_header, request_body, response_header, response_body) " \
               "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         self.cursor.execute(sql, (url, scheme, host, path, port, query, status_code, charset, method,
@@ -63,9 +67,9 @@ class Database:
 
         self.clean()
 
-    def select_page(self, page):
-        sql = 'select * from result order by id desc limit %s, 15' % str((page-1) * 15)
-        self.cursor.execute(sql)
+    def select_by_page(self, page):
+        sql = 'select * from proxy order by id desc limit ?, 15'
+        self.cursor.execute(sql, ((page-1)*15, ))
         results = self.cursor.fetchall()
 
         _results = []
@@ -93,8 +97,8 @@ class Database:
         return _results
 
     def select_detail(self, _id):
-        sql = 'select * from result where id = %s' % _id
-        self.cursor.execute(sql)
+        sql = 'select * from proxy where id = ?'
+        self.cursor.execute(sql, (_id, ))
         result = self.cursor.fetchone()
         _result = {}
         _result['id'] = result[0]
@@ -117,19 +121,64 @@ class Database:
 
         return _result
 
+    def select_search(self, page, host):
+        sql = 'select * from proxy where host like ? order by id desc limit ?, 15'
+        self.cursor.execute(sql, ('%'+host, (page-1)*15))
+        results = self.cursor.fetchall()
 
+        _results = []
+        for result in results:
+            _result = {}
+            _result['id'] = result[0]
+            _result['url'] = result[1]
+            _result['scheme'] = result[2]
+            _result['host'] = result[3]
+            _result['path'] = result[4]
+            _result['port'] = result[5]
+            _result['query'] = result[6]
+            _result['status_code'] = result[7]
+            _result['charset'] = result[8]
+            _result['method'] = result[9]
+            _result['sqli'] = result[10]
+            _result['request_header'] = result[11]
+            _result['request_body'] = result[12]
+            _result['response_header'] = result[13]
+            _result['response_body'] = result[14]
+            _results.append(_result)
+
+        self.clean()
+
+        return _results
 
     def count(self):
-        sql = 'select count(*) from result'
+        sql = 'select count(*) from proxy'
         self.cursor.execute(sql)
         max_page = self.cursor.fetchone()
         return (max_page[0] // 15) + 1
+
+    def count_by_host(self, host):
+        sql = 'select count(*) from proxy where host = ?'
+        self.cursor.execute(sql, (host, ))
+        max_page = self.cursor.fetchone()
+        return (max_page[0] // 15) + 1
+
+    def create_scan_result(self):
+        self.cursor.execute('create table scan('
+                            'id integer primary key, '
+                            'url varchar(255), '
+                            'vul varchar(16),'
+                            'request_header text, ' 
+                            'request_body text, ' 
+                            'response_header text, ' 
+                            'response_body text ' 
+                            ')')
+
+        print("create scan successfully")
+
 
     def clean(self):
         self.cursor.close()
         self.conn.close()
 
 if __name__ == '__main__':
-    d = Database().create_database()
-    # d.select_page(page=1)
-    # d.select_detail(_id=10)
+    Database().create_scan_result()

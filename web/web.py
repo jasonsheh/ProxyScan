@@ -15,7 +15,7 @@ app = Flask(__name__)
 @app.route('/<int:page>')
 def index(page=1):
     results = Database().select_by_page(page)
-    max_page = Database().count()
+    max_page = Database().count('proxy')
     return render_template('index.html',
                            results=results, page=page, max_page=max_page)
 

@@ -13,6 +13,7 @@ class Sql:
         self.method = method.decode()
         self.data = data.decode()
         self.waf = ''
+        self.sql_info = {'url': self.target, 'vul': 'sqli'}
         self.payload = {' and 1=1': ' and 1=2', "' and '1'='1": "' and '1'='2"}
 
     def init(self):
@@ -144,6 +145,9 @@ class Sql:
         self.init()
         if self._scan():
             print('可能存在注入:' + self.target)
+            return True, self.sql_info
+        else:
+            return False,
 
 if __name__ == '__main__':
     with open('/home/jasonsheh/Tools/python/UrlSuite/res.txt', 'r') as file:

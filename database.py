@@ -35,7 +35,7 @@ class Database:
 
         print("create proxy successfully")
 
-    def insert(self, result):
+    def proxy_insert(self, result):
         url = result['url'].decode()
         scheme = result['scheme'].decode()
         host = result['host'].decode()
@@ -150,9 +150,9 @@ class Database:
 
         return _results
 
-    def count(self):
-        sql = 'select count(*) from proxy'
-        self.cursor.execute(sql)
+    def count(self, mode):
+        sql = 'select count(*) from ?'
+        self.cursor.execute(sql, (mode,))
         max_page = self.cursor.fetchone()
         return (max_page[0] // 15) + 1
 
@@ -166,19 +166,23 @@ class Database:
         self.cursor.execute('create table scan('
                             'id integer primary key, '
                             'url varchar(255), '
-                            'vul varchar(16),'
-                            'request_header text, ' 
-                            'request_body text, ' 
-                            'response_header text, ' 
-                            'response_body text ' 
+                            'vul varchar(16), '
                             ')')
 
         print("create scan successfully")
 
+    def scan_insert(self, result):
+        url = result['url'].decode()
+        vul = result['vul'].decode()
+
+        sql = "insert into scan (url, vul ) values (?, ?)"
+        self.cursor.execute(sql, (url, vul))
+        self.conn.commit()
+        self.clean()
 
     def clean(self):
         self.cursor.close()
         self.conn.close()
 
 if __name__ == '__main__':
-    Database().create_scan_result()
+    Database().create_proxy_result()

@@ -23,7 +23,7 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
-data_size = 4096
+data_size = 8192
 
 
 class Proxy:
@@ -33,7 +33,7 @@ class Proxy:
         self.port = 8000
         self.denies = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com', b'mozilla.org', b'firefox.com',
                        b'cnzz.com', b'google-analytics.com', b'tianqi.com']
-        self.static_ext = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico', b'.swf', b'.jpeg']
+        self.static_ext = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico', b'.swf', b'.jpeg', b'.pdf']
         self.result = {}
         self.ca_lock = threading.Lock()
         #self.epoll = select.epoll()
@@ -208,7 +208,7 @@ class Proxy:
         http_sock.sendall(client_data)
         return http_sock
     
-    def receive_http_data_from_server(self, http_sock, conn):
+    def receive_http_data_from_server(self, http_sock, conn, url):
         http_data = b''
         while True:
             try:
@@ -218,8 +218,9 @@ class Proxy:
                     conn.send(server_data)
                 else:
                     break
-            except:
-                print(server_data)
+            except Exception as e:
+                # print(e, ' '+url+' ', server_data)
+                break
         return http_data
 
     def client_data_analysis(self, client_data):
@@ -350,20 +351,19 @@ class Proxy:
 
                 # 建立连接， 发送接收数据
                 http_sock = self.send_http_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
-                server_data = self.receive_http_data_from_server(http_sock, conn)
+                # print(client_data)
+                server_data = self.receive_http_data_from_server(http_sock, conn, self.result['url'].decode())
+                # print(server_data)
                 http_sock.close()
 
             conn.close()
             if not self.fliter(self.result['path'], 'ext') and server_data and self.result['method'] != b'CONNECT':
                 self.server_data_analysis(server_data)
-                print(self.result['host'], self.result)
-
 
                 # 安全测试处理内容 之后交由celery入队列处理
                 # Scan(self.result).run()
                 # Sql(url.decode(), self.result['method'], self.result['request_body']).run()
-                self.result['sqli'] = ''
-                Database().insert(self.result)
+                # Database().proxy_insert(self.result)
 
 
 if __name__ == '__main__':

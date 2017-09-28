@@ -2,6 +2,8 @@
 # __author__ = 'jasonsheh'
 # -*- coding:utf-8 -*-
 
+from database import Database
+
 from script.sqli import Sql
 
 
@@ -11,6 +13,8 @@ class Scan:
 
     def run(self):
 
-        Sql(self.result['url'], self.result['method'], self.result['request_body']).run()
+        flag, sql_info = Sql(self.result['url'], self.result['method'], self.result['request_body']).run()
+        if flag:
+            Database().scan_insert(sql_info)
 
 

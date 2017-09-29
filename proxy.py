@@ -85,7 +85,7 @@ class Proxy:
         elif mode == 'ext' and url:
             for ext in self.static_ext:
                 if url.endswith(ext):
-                    return url
+                    return True
 
         return False
 
@@ -171,29 +171,34 @@ class Proxy:
             client_data = connstream.recv(data_size)
             return client_data, connstream
         except Exception as e:
-            print(e, ' '+host)
+            return b'', connstream
+            # print(e, ' '+self.result['url'])
 
     def send_https_data_to_server(self, host, port, client_data):
         https_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        # context = ssl.SSLContext()
         # context.load_default_certs()
         try:
-            https_sock = context.wrap_socket(https_sock)
-            https_sock.connect((host, port))
+            https_sock = ssl.wrap_socket(https_sock)
+            https_sock.connect((host, 443))
             https_sock.sendall(client_data)
         except Exception as e:
-            print(e, ' ', host)
+            print(1, e, ' ', host, port)
 
         return https_sock
 
     def receive_https_data_from_server(self, https_sock, conn):
         https_data = b''
         while True:
-            server_data = https_sock.recv(data_size)
-            if server_data:
-                https_data += server_data
-                conn.send(server_data)
-            else:
+            try:
+                server_data = https_sock.recv(data_size)
+                if server_data:
+                    https_data += server_data
+                    conn.send(server_data)
+                else:
+                    break
+            except Exception as e:
+                # print(e, ' '+url+' ', server_data)
                 break
         return https_data
 
@@ -286,6 +291,8 @@ class Proxy:
                 self.result['charset'] = re.findall(pattern, str(server_data))[0]
             else:
                 self.result['charset'] = ''
+        else:
+            print('server_data ', server_data)
 
     def run(self):
         self.connect_client()
@@ -357,13 +364,12 @@ class Proxy:
                 http_sock.close()
 
             conn.close()
-            if not self.fliter(self.result['path'], 'ext') and server_data and self.result['method'] != b'CONNECT':
-                self.server_data_analysis(server_data)
 
-                # 安全测试处理内容 之后交由celery入队列处理
-                # Scan(self.result).run()
-                # Sql(url.decode(), self.result['method'], self.result['request_body']).run()
-                # Database().proxy_insert(self.result)
+            if (not self.fliter(self.result['path'], 'ext')) and server_data and self.result['method'] != b'CONNECT':
+                self.server_data_analysis(server_data)
+                self.result['vul'] = Scan(self.result).run()
+                if 'response_header' in self.result:
+                    Database().proxy_insert(self.result)
 
 
 if __name__ == '__main__':

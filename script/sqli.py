@@ -147,9 +147,9 @@ class Sql:
             print('可能存在注入:' + self.target)
             return True, self.sql_info
         else:
-            return False,
+            return False, {}
 
 if __name__ == '__main__':
     with open('/home/jasonsheh/Tools/python/UrlSuite/res.txt', 'r') as file:
         for eachline in file:
-            Sql(bytes(eachline), b'GET').run()
+            Sql(bytes(eachline, 'utf-8').strip(), b'GET').run()

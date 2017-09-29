@@ -12,9 +12,12 @@ class Scan:
         self.result = result
 
     def run(self):
+        return self.sql_scan()
 
-        flag, sql_info = Sql(self.result['url'], self.result['method'], self.result['request_body']).run()
-        if flag:
-            Database().scan_insert(sql_info)
-
-
+    def sql_scan(self):
+        if not Database().url_aleardy_test(self.result):
+            flag, sql_info = Sql(self.result['url'], self.result['method'], self.result['request_body']).run()
+            if flag:
+                Database().scan_insert(sql_info)
+                return 'sql'
+        return ''

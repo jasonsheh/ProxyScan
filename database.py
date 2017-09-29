@@ -26,7 +26,7 @@ class Database:
                             'status_code varchar(3), '
                             'charset varchar(10), '
                             'method varchar(10), '
-                            'sqli tinyint, '
+                            'vul tinyint, '
                             'request_header text, ' 
                             'request_body text, ' 
                             'response_header text, ' 
@@ -36,6 +36,7 @@ class Database:
         print("create proxy successfully")
 
     def proxy_insert(self, result):
+        # print('2', result)
         url = result['url'].decode()
         scheme = result['scheme'].decode()
         host = result['host'].decode()
@@ -45,7 +46,7 @@ class Database:
         status_code = result['status_code'].decode()
         charset = result['charset']
         method = result['method'].decode()
-        sqli = result['sqli']
+        vul = result['vul']
         request_header = result['request_header'].decode()
         if result['request_body']:
             request_body = result['request_body'].decode()
@@ -59,10 +60,10 @@ class Database:
             response_body = str(result['response_body'])[2:-1]
 
         sql = "insert into proxy (url, scheme, host, path, port, query, status_code, charset, method, " \
-              "sqli, request_header, request_body, response_header, response_body) " \
+              "vul, request_header, request_body, response_header, response_body) " \
               "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         self.cursor.execute(sql, (url, scheme, host, path, port, query, status_code, charset, method,
-                                  sqli, request_header, request_body, response_header, response_body))
+                                  vul, request_header, request_body, response_header, response_body))
         self.conn.commit()
 
         self.clean()
@@ -85,7 +86,7 @@ class Database:
             _result['status_code'] = result[7]
             _result['charset'] = result[8]
             _result['method'] = result[9]
-            _result['sqli'] = result[10]
+            _result['vul'] = result[10]
             _result['request_header'] = result[11]
             _result['request_body'] = result[12]
             _result['response_header'] = result[13]
@@ -111,7 +112,7 @@ class Database:
         _result['status_code'] = result[7]
         _result['charset'] = result[8]
         _result['method'] = result[9]
-        _result['sqli'] = result[10]
+        _result['vul'] = result[10]
         _result['request_header'] = result[11]
         _result['request_body'] = result[12]
         _result['response_header'] = result[13]
@@ -139,7 +140,7 @@ class Database:
             _result['status_code'] = result[7]
             _result['charset'] = result[8]
             _result['method'] = result[9]
-            _result['sqli'] = result[10]
+            _result['vul'] = result[10]
             _result['request_header'] = result[11]
             _result['request_body'] = result[12]
             _result['response_header'] = result[13]
@@ -166,12 +167,21 @@ class Database:
         self.cursor.execute('create table scan('
                             'id integer primary key, '
                             'url varchar(255), '
-                            'vul varchar(16), '
+                            'vul varchar(16) '
                             ')')
 
         print("create scan successfully")
 
     def scan_insert(self, result):
+        url = result['url']
+        vul = result['vul']
+
+        sql = "insert into scan (url, vul ) values (?, ?)"
+        self.cursor.execute(sql, (url, vul))
+        self.conn.commit()
+        self.clean()
+
+    def scan_select(self, result):
         url = result['url'].decode()
         vul = result['vul'].decode()
 
@@ -179,6 +189,12 @@ class Database:
         self.cursor.execute(sql, (url, vul))
         self.conn.commit()
         self.clean()
+
+    def url_aleardy_test(self, result):
+        url = result['url'].decode()
+        sql = "select count(*) from scan where url = ?"
+        self.cursor.execute(sql, (url, ))
+        return self.cursor.fetchone()[0]
 
     def clean(self):
         self.cursor.close()

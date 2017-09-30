@@ -152,8 +152,8 @@ class Database:
         return _results
 
     def count(self, mode):
-        sql = 'select count(*) from ?'
-        self.cursor.execute(sql, (mode,))
+        sql = 'select count(*) from ' + mode
+        self.cursor.execute(sql)
         max_page = self.cursor.fetchone()
         return (max_page[0] // 15) + 1
 
@@ -181,14 +181,22 @@ class Database:
         self.conn.commit()
         self.clean()
 
-    def scan_select(self, result):
-        url = result['url'].decode()
-        vul = result['vul'].decode()
+    def scan_select(self, page):
+        sql = 'select * from scan order by id desc limit ?, 15'
+        self.cursor.execute(sql, ((page - 1) * 15,))
+        results = self.cursor.fetchall()
 
-        sql = "insert into scan (url, vul ) values (?, ?)"
-        self.cursor.execute(sql, (url, vul))
-        self.conn.commit()
+        _results = []
+        for result in results:
+            _result = {}
+            _result['id'] = result[0]
+            _result['url'] = result[1]
+            _result['vul'] = result[2]
+            _results.append(_result)
+
         self.clean()
+
+        return _results
 
     def url_aleardy_test(self, result):
         url = result['url'].decode()
@@ -201,4 +209,4 @@ class Database:
         self.conn.close()
 
 if __name__ == '__main__':
-    Database().create_proxy_result()
+    Database().create_database()

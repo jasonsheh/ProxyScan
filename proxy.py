@@ -318,7 +318,6 @@ class Proxy:
 
         # 同样 实际上没用, 没想好怎么处理
         if not self.fliter(self.result['host'], 'host'):
-
             # 统计访问记录
             # print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())))
 
@@ -368,9 +367,10 @@ class Proxy:
             if (not self.fliter(self.result['path'], 'ext')) and server_data and self.result['method'] != b'CONNECT':
                 self.server_data_analysis(server_data)
                 self.result['vul'] = Scan(self.result).run()
-                if 'response_header' in self.result:
+                if 'response_header' in self.result and self.fliter(self.result['url'], 'host'):
                     Database().proxy_insert(self.result)
 
 
 if __name__ == '__main__':
     Proxy().run()
+    # print(Proxy().fliter(b'www.cnzz.com', 'host'))

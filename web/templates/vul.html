@@ -57,23 +57,15 @@
         <tr>
             <th>ID</th>
             <th>Host</th>
-            <th>Scheme</th>
-            <th>Path</th>
-            <th>Query</th>
-            <th>Port</th>
-            <th>Status</th>
+            <th>Vul</th>
         </tr>
     </thead>
     <tbody>
         {% for result in results %}
         <tr>
             <td>{{result.id}}</td>
-            <td><a href="/detail/{{result.id}}">{{result.host | truncate(40, True)}}</a></td>
-            <td>{{result.scheme}}</td>
-            <td>{{result.path | truncate(40, True)}}</td>
-            <td>{{result.query | truncate(40, True)}}</td>
-            <td>{{result.port}}</td>
-            <td>{{result.status_code}}</td>
+            <td><a href="/detail/{{result.id}}">{{result.url | truncate(40, True)}}</a></td>
+            <td>{{result.vul}}</td>
         </tr>
         {% endfor %}
     </tbody>
@@ -86,16 +78,16 @@
   <li class="disabled"><a><span aria-hidden="true">&larr;</span> 上一页</a></li>
   <li class="disabled"><a>首页</a></li>
   {% else %}
-  <li><a href="/result.host/{{page-1}}"><span aria-hidden="true">&larr;</span> 上一页</a></li>
-  <li><a href="/result.host/1">首页</a></li>
+  <li><a href="/{{page-1}}"><span aria-hidden="true">&larr;</span> 上一页</a></li>
+  <li><a href="/1">首页</a></li>
   {% endif %}
 
   {% if page == max_page %}
   <li class="disabled"><a>尾页</a></li><li>
   <li class="disabled"><a>下一页 <span aria-hidden="true">&rarr;</span></a></li>
   {% else %}
-  <li><a href="/result.host/{{max_page}}">尾页</a></li>
-  <li><a href="/result.host/{{page+1}}">下一页 <span aria-hidden="true">&rarr;</span></a></li>
+  <li><a href="/{{max_page}}">尾页</a></li>
+  <li><a href="/{{page+1}}">下一页 <span aria-hidden="true">&rarr;</span></a></li>
   {% endif %}
   </ul>
 </nav>

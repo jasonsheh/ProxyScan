@@ -29,6 +29,15 @@ def detail(_id):
                            response_header=result['response_header'].split(r'\r\n'),)
 
 
+@app.route('/vul')
+@app.route('/vul/<int:page>')
+def vul(page=1):
+    max_page = Database().count('scan')
+    results = Database().scan_select(page)
+    return render_template('vul.html',
+                           results=results, page=page, max_page=max_page)
+
+
 @app.route('/<string:host>/<int:page>')
 def search_host(host, page):
     results = Database().select_search(page, host)

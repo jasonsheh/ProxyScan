@@ -1,4 +1,3 @@
-
 #!/usr/bin/python
 # __author__ = 'jasonsheh'
 # -*- coding:utf-8 -*-
@@ -23,6 +22,8 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
+
+from OpenSSL import crypto
 data_size = 8192
 
 
@@ -36,9 +37,8 @@ class Proxy:
         self.static_ext = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico', b'.swf', b'.jpeg', b'.pdf']
         self.result = {}
         self.ca_lock = threading.Lock()
-        #self.epoll = select.epoll()
-        #self.epoll.register(serversocket.fileno(), select.EPOLLIN)
-
+        # self.epoll = select.epoll()
+        # self.epoll.register(serversocket.fileno(), select.EPOLLIN)
 
         # 创建socket对象
         # self.https_sock = ssl.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
@@ -89,6 +89,53 @@ class Proxy:
 
         return False
 
+    def create_ca2(self, host):
+        CERT_FILE = "./cert/cacert.pem"
+        KEY_FILE = "./cert/cakey.pem"
+        with open("./cert/cacert.pem", "r") as my_cert_file:
+            cacert = my_cert_file.read()
+            ca_cert = crypto.load_certificate(crypto.FILETYPE_PEM, cacert)
+
+        with open("./cert/cakey.pem", "r") as my_key_file:
+            cakey = my_key_file.read()
+            ca_key = crypto.load_privatekey(crypto.FILETYPE_PEM, cakey)
+
+        # create a key pair
+        key = crypto.PKey()
+        key.generate_key(crypto.TYPE_RSA, 2048)
+
+        # create a self-signed cert
+        cert = crypto.X509()
+        cert.get_subject().C = "CN"
+        cert.get_subject().ST = "JiangSu"
+        cert.get_subject().L = "NanJing"
+        cert.get_subject().O = "ProxyScan"
+        cert.get_subject().OU = "ProxyScan CA"
+        cert.get_subject().CN = host
+        cert.set_serial_number(x509.random_serial_number())
+        cert.gmtime_adj_notBefore(0)
+        cert.gmtime_adj_notAfter(10 * 365 * 24 * 60 * 60)
+
+        cert.set_issuer(ca_cert.get_subject())
+        cert.set_pubkey(key)
+        cert.sign(ca_key, "sha256")
+
+        open("./cert/website/"+host.strip('*')+".cert.pem", "wt").write(
+            crypto.dump_certificate(crypto.FILETYPE_PEM, cert).decode())
+        open("./cert/website/"+host.strip('*')+".key.pem", "wt").write(
+            crypto.dump_privatekey(crypto.FILETYPE_PEM, key).decode())
+
+    # def create_ca(self, host):
+    #     cert = crypto.X509()
+    #     cert.set_serial_number(serial_no)
+    #     cert.gmtime_adj_notBefore(notBeforeVal)
+    #     cert.gmtime_adj_notAfter(notAfterVal)
+    #     cert.set_issuer(caCert.get_subject())
+    #     cert.set_subject(deviceCsr.get_subject())
+    #     cert.set_pubkey(deviceCsr.get_pubkey())
+    #     cert.sign(CAprivatekey, digest)
+    #     return cert
+
     def create_fake_ca(self, host):
         with open("./cert/cakey.pem", "rb") as key_file:
             key = serialization.load_pem_private_key(
@@ -99,71 +146,70 @@ class Proxy:
 
         issuer = x509.Name([
                     x509.NameAttribute(NameOID.COUNTRY_NAME, u"CN"),
-                    x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"Jiangsu"),
-                    x509.NameAttribute(NameOID.LOCALITY_NAME, u"Nanjing"),
+                    x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"JiangSu"),
+                    x509.NameAttribute(NameOID.LOCALITY_NAME, u"NanJing"),
                     x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"ProxyScan"),
-                    x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, u"ProxyScan"),
+                    x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, u"ProxyScan CA"),
                     x509.NameAttribute(NameOID.COMMON_NAME, u"JasonSheh"),
-                    x509.NameAttribute(NameOID.EMAIL_ADDRESS, u"3039344@qq.com"),
+                    x509.NameAttribute(NameOID.EMAIL_ADDRESS, u"qq3039344@gmail.com"),
                ])
 
         subject = x509.Name([
                     x509.NameAttribute(NameOID.COUNTRY_NAME, u"CN"),
-                    x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"Jiangsu"),
-                    x509.NameAttribute(NameOID.LOCALITY_NAME, u"Nanjing"),
+                    x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"JiangSu"),
+                    x509.NameAttribute(NameOID.LOCALITY_NAME, u"NanJing"),
                     x509.NameAttribute(NameOID.ORGANIZATION_NAME, host),
-                    x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, u"ProxyScan"),
+                    x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, u"ProxyScan CA"),
                     x509.NameAttribute(NameOID.COMMON_NAME, host),
-                    x509.NameAttribute(NameOID.EMAIL_ADDRESS, u"3039344@qq.com"),
+                    x509.NameAttribute(NameOID.EMAIL_ADDRESS, u"qq3039344@gmail.com"),
                ])
         if host.startswith('*.'):
             cert = x509.CertificateBuilder().subject_name(
                    subject
                 ).issuer_name(
-                   issuer
+                    issuer
                 ).public_key(
                    key.public_key()
                 ).serial_number(
                    x509.random_serial_number()
                 ).not_valid_before(
-                   datetime.datetime.utcnow()
+                   datetime.datetime.utcnow() - datetime.timedelta(1, 0, 0)
+                ).not_valid_after(
+                     datetime.datetime.utcnow() + datetime.timedelta(days=3650)
                 ).add_extension(
                     x509.SubjectAlternativeName([x509.DNSName(host), ]),
                     critical=False,
-                ).not_valid_after(
-                     datetime.datetime.utcnow() + datetime.timedelta(days=365)
                 ).sign(
                     key, hashes.SHA256(), default_backend())
         else:
             cert = x509.CertificateBuilder().subject_name(
-                subject
-            ).issuer_name(
-                issuer
-            ).public_key(
-                key.public_key()
-            ).serial_number(
-                x509.random_serial_number()
-            ).not_valid_before(
-                datetime.datetime.utcnow()
-            ).add_extension(
-                x509.SubjectAlternativeName([x509.DNSName(host), x509.DNSName('*.'+host)]),
-                critical=False,
-            ).not_valid_after(
-                datetime.datetime.utcnow() + datetime.timedelta(days=365)
-            ).sign(
-                key, hashes.SHA256(), default_backend())
+                    subject
+                ).issuer_name(
+                    issuer
+                ).public_key(
+                    key.public_key()
+                ).serial_number(
+                    x509.random_serial_number()
+                ).not_valid_before(
+                    datetime.datetime.utcnow() - datetime.timedelta(1, 0, 0)
+                ).not_valid_after(
+                    datetime.datetime.utcnow() + datetime.timedelta(days=3650)
+                ).add_extension(
+                    x509.SubjectAlternativeName([x509.DNSName(host), x509.DNSName('*.'+host)]),
+                    critical=False,
+                ).sign(
+                    key, hashes.SHA256(), default_backend())
 
         # Write our certificate out to disk.
-        if host.startswith('*.'):
-            host = host[2:]
-        with open("./cert/website/"+host+".pem", "wb") as f:
+        with open("./cert/website/"+host.strip('*')+".pem", "wb") as f:
             f.write(cert.public_bytes(serialization.Encoding.PEM))
 
     def receive_https_data_from_client(self, conn, host):
         conn.sendall(b'HTTP/1.1 200 Connection Established\r\n\r\n')
         context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
         try:
-            context.load_cert_chain(certfile='./cert/website/'+host+'.pem', keyfile='./cert/cakey.pem')
+            context.load_cert_chain(certfile='./cert/website/'+host.strip('*')+'.cert.pem',
+                                    keyfile='./cert/website/'+host.strip('*')+'.key.pem')
         except FileNotFoundError:
             print(host)
         connstream = context.wrap_socket(conn, server_side=True)
@@ -289,6 +335,7 @@ class Proxy:
             if b'charset=' in server_data:
                 pattern = re.compile('charset=(.*?).*?\\\\r\\\\n')
                 self.result['charset'] = re.findall(pattern, str(server_data))[0]
+                print(self.result['charset'])
             else:
                 self.result['charset'] = ''
         else:
@@ -307,6 +354,7 @@ class Proxy:
                 break
 
     def proxy(self, conn):
+        server_data = ''
         client_data = conn.recv(data_size)
 
         # 实际上没用, 没想好怎么处理
@@ -328,9 +376,10 @@ class Proxy:
 
             if self.result['method'] == b'CONNECT':
                 if self.result['host'].decode().count('.') > 1:
-                    host = self.result['host'].decode().split('.', 1)[1]
+                    host = '*.'+self.result['host'].decode().split('.', 1)[1]
                     if not os.path.exists("./cert/website/" + host + ".pem") and self.ca_lock.acquire():
-                        self.create_fake_ca('*.'+host)
+                        # self.create_fake_ca(host)
+                        self.create_ca2(host)
                         self.ca_lock.release()
                 else:
                     host = self.result['host'].decode()
@@ -368,7 +417,8 @@ class Proxy:
                 self.server_data_analysis(server_data)
                 self.result['vul'] = Scan(self.result).run()
                 if 'response_header' in self.result and self.fliter(self.result['url'], 'host'):
-                    Database().proxy_insert(self.result)
+                    pass
+                    # Database().proxy_insert(self.result)
 
 
 if __name__ == '__main__':

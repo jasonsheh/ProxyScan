@@ -7,7 +7,6 @@ from scan import Scan
 
 import socket
 import os
-import select
 import sys
 import ssl
 import gzip
@@ -22,36 +21,36 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
-
 from OpenSSL import crypto
+
+from typing import List, Dict
 data_size = 8192
 
 
 class Proxy:
     def __init__(self):
         # self.q = queue.Queue(0)
-        self.host = '0.0.0.0'
-        self.port = 8000
-        self.denies = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com', b'mozilla.org', b'firefox.com',
+        self.host: str = '0.0.0.0'
+        self.port: int = 8000
+        self.denies: List[bytes] = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com', b'mozilla.org', b'firefox.com',
                        b'cnzz.com', b'google-analytics.com', b'tianqi.com']
-        self.static_ext = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico', b'.swf', b'.jpeg', b'.pdf']
-        self.result = {}
+        self.static_ext: List[bytes] = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico', b'.swf', b'.jpeg', b'.pdf']
+        self.result: Dict = {}
         self.ca_lock = threading.Lock()
-        # self.epoll = select.epoll()
-        # self.epoll.register(serversocket.fileno(), select.EPOLLIN)
 
         # 创建socket对象
         # self.https_sock = ssl.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
         self.proxy_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.db = Database()
 
     def connect_client(self):
         try:
             self.proxy_sock.bind((self.host, self.port))
+            self.proxy_sock.listen(20)
         except Exception as e:
-            print('Error %s' % e)
+            print(e)
             sys.exit("python proxy bind error ")
         print("python proxy open")
-        self.proxy_sock.listen(20)
         # self.proxy_sock.setblocking(0)
 
     @staticmethod
@@ -72,33 +71,43 @@ class Proxy:
     def response_decode(response_header, response_body):
         if b'charset=' in response_header:
             charset = response_header.split(b'charset=')[1].split(b'\r\n')[0]
-            if charset == (b'gb2312' or b'GBK'):
+            if charset in [b'gb2312' or b'GBK']:
                 response_body = response_body.decode(encoding='GBK').encode('utf-8')
         return response_body
 
-    def fliter(self, url, mode):
-        if mode == 'host' and url:
+    @staticmethod
+    def close_connection(client_data):
+        if client_data.find(b'Connection') >= 0:
+            client_data = client_data.replace(b'keep-alive', b'close')
+        else:
+            client_data += b'Connection: close\r\n'
+        return client_data
+
+    def filter(self, url, mode):
+        if not url:
+            return True
+
+        if mode == 'host':
             for deny in self.denies:
                 if deny in url:
-                    return True
+                    return False
 
-        elif mode == 'ext' and url:
+        elif mode == 'ext':
             for ext in self.static_ext:
                 if url.endswith(ext):
-                    return True
+                    return False
 
-        return False
+        return True
 
-    def create_ca2(self, host):
-        CERT_FILE = "./cert/cacert.pem"
-        KEY_FILE = "./cert/cakey.pem"
-        with open("./cert/cacert.pem", "r") as my_cert_file:
-            cacert = my_cert_file.read()
-            ca_cert = crypto.load_certificate(crypto.FILETYPE_PEM, cacert)
+    @staticmethod
+    def create_ca2(host):
+        cert_file = "./cert/cacert.pem"
+        key_file = "./cert/cakey.pem"
+        with open(cert_file, "r") as my_cert_file:
+            ca_cert = crypto.load_certificate(crypto.FILETYPE_PEM, my_cert_file.read())
 
-        with open("./cert/cakey.pem", "r") as my_key_file:
-            cakey = my_key_file.read()
-            ca_key = crypto.load_privatekey(crypto.FILETYPE_PEM, cakey)
+        with open(key_file, "r") as my_key_file:
+            ca_key = crypto.load_privatekey(crypto.FILETYPE_PEM, my_key_file.read())
 
         # create a key pair
         key = crypto.PKey()
@@ -125,18 +134,8 @@ class Proxy:
         open("./cert/website/"+host.strip('*')+".key.pem", "wt").write(
             crypto.dump_privatekey(crypto.FILETYPE_PEM, key).decode())
 
-    # def create_ca(self, host):
-    #     cert = crypto.X509()
-    #     cert.set_serial_number(serial_no)
-    #     cert.gmtime_adj_notBefore(notBeforeVal)
-    #     cert.gmtime_adj_notAfter(notAfterVal)
-    #     cert.set_issuer(caCert.get_subject())
-    #     cert.set_subject(deviceCsr.get_subject())
-    #     cert.set_pubkey(deviceCsr.get_pubkey())
-    #     cert.sign(CAprivatekey, digest)
-    #     return cert
-
-    def create_fake_ca(self, host):
+    @staticmethod
+    def create_fake_ca(host):
         with open("./cert/cakey.pem", "rb") as key_file:
             key = serialization.load_pem_private_key(
                 key_file.read(),
@@ -180,7 +179,8 @@ class Proxy:
                     x509.SubjectAlternativeName([x509.DNSName(host), ]),
                     critical=False,
                 ).sign(
-                    key, hashes.SHA256(), default_backend())
+                    key, hashes.SHA256(), default_backend()
+                )
         else:
             cert = x509.CertificateBuilder().subject_name(
                     subject
@@ -198,7 +198,8 @@ class Proxy:
                     x509.SubjectAlternativeName([x509.DNSName(host), x509.DNSName('*.'+host)]),
                     critical=False,
                 ).sign(
-                    key, hashes.SHA256(), default_backend())
+                    key, hashes.SHA256(), default_backend()
+                )
 
         # Write our certificate out to disk.
         with open("./cert/website/"+host.strip('*')+".pem", "wb") as f:
@@ -211,14 +212,15 @@ class Proxy:
             context.load_cert_chain(certfile='./cert/website/'+host.strip('*')+'.cert.pem',
                                     keyfile='./cert/website/'+host.strip('*')+'.key.pem')
         except FileNotFoundError:
-            print(host)
-        connstream = context.wrap_socket(conn, server_side=True)
+            print('FileNotFoundError', host)
         try:
-            client_data = connstream.recv(data_size)
-            return client_data, connstream
+            conn_stream = context.wrap_socket(conn, server_side=True)
+            client_data = conn_stream.recv(data_size)
+            return client_data, conn_stream
+        # except ConnectionAbortedError:
+        #     print('无法连接至', self.result['url'].decode())
         except Exception as e:
-            return b'', connstream
-            # print(e, ' '+self.result['url'])
+            print(e, self.result['url'].decode())
 
     def send_https_data_to_server(self, host, port, client_data):
         https_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -229,7 +231,7 @@ class Proxy:
             https_sock.connect((host, 443))
             https_sock.sendall(client_data)
         except Exception as e:
-            print(1, e, ' ', host, port)
+            print(e)
 
         return https_sock
 
@@ -244,11 +246,10 @@ class Proxy:
                 else:
                     break
             except Exception as e:
-                # print(e, ' '+url+' ', server_data)
+                print(e, self.result['url'].decode(), server_data.decode())
                 break
         return https_data
 
-    # http
     def send_http_data_to_server(self, host, port, client_data):
         http_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         http_sock.settimeout(20)
@@ -270,7 +271,7 @@ class Proxy:
                 else:
                     break
             except Exception as e:
-                # print(e, ' '+url+' ', server_data)
+                print(e, url)
                 break
         return http_data
 
@@ -282,8 +283,8 @@ class Proxy:
 
             url = headers[0].split(b" ")[1].strip()
             if not url.startswith(b'http'):
-                if b':443' in url:
-                    url = b'https://' + url
+                if url.endswith(b'443'):
+                    url = b'https://' + url[:-4]
                 else:
                     url = b'http://' + url
 
@@ -307,15 +308,11 @@ class Proxy:
 
             path = headers[0].split(b" ")[1].strip()
             host = headers[1].split(b" ")[1].strip()
-
-            if b':443' in host:
-                url = b'https://' + host + path
-            else:
-                url = b'http://' + host + path
+            url = b'https://' + host + path
 
             self.result = {'url': url, 'request_header': request_header}
-            self.result['scheme'], self.result['host'], self.result['path'], \
-            self.result['params'], self.result['query'], self.result['fragment'] = urlparse(url)
+            self.result['scheme'], self.result['host'], self.result['path'], self.result['params'], self.result['query'],\
+            self.result['fragment'] = urlparse(url)
 
             if b':' in self.result['host']:
                 self.result['host'], self.result['port'] = self.result['host'].rsplit(b':')
@@ -332,10 +329,14 @@ class Proxy:
             self.result['response_header'] = response_header
             self.result['response_body'] = response_body
             self.result['status_code'] = response_header.split(b"\r\n")[0].split(b' ')[1]
+            # print(self.result['status_code'].decode())
             if b'charset=' in server_data:
-                pattern = re.compile('charset=(.*?).*?\\\\r\\\\n')
-                self.result['charset'] = re.findall(pattern, str(server_data))[0]
-                print(self.result['charset'])
+                # pattern = re.compile('charset=(.*?)[">]*\\\\r\\\\n')
+                pattern = re.compile('charset=([-a-zA-Z_0-9]+)\S.')
+                try:
+                    self.result['charset'] = re.findall(pattern, str(server_data))[0]
+                except IndexError:
+                    print('charset', self.result['charset'], server_data)
             else:
                 self.result['charset'] = ''
         else:
@@ -350,6 +351,7 @@ class Proxy:
                 t.start()
             except KeyboardInterrupt:
                 self.proxy_sock.close()
+                self.db.clean()
                 print("python proxy close")
                 break
 
@@ -357,23 +359,13 @@ class Proxy:
         server_data = ''
         client_data = conn.recv(data_size)
 
-        # 实际上没用, 没想好怎么处理
-        if not client_data:
-            return
-
-        # print(client_data)
         self.client_data_analysis(client_data)
 
-        # 同样 实际上没用, 没想好怎么处理
-        if not self.fliter(self.result['host'], 'host'):
-            # 统计访问记录
-            # print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time())))
+        # 对不在黑名单中的域名进行处理
+        if self.filter(self.result['host'], 'host'):
+            client_data = self.close_connection(client_data)
 
-            if client_data.find(b'Connection') >= 0:
-                client_data = client_data.replace(b'keep-alive', b'close')
-            else:
-                client_data += b'Connection: close\r\n'
-
+            # https的connect方法
             if self.result['method'] == b'CONNECT':
                 if self.result['host'].decode().count('.') > 1:
                     host = '*.'+self.result['host'].decode().split('.', 1)[1]
@@ -384,16 +376,13 @@ class Proxy:
                 else:
                     host = self.result['host'].decode()
                     if not os.path.exists("./cert/website/" + host + ".pem") and self.ca_lock.acquire():
-                        self.create_fake_ca(host)
+                        # self.create_fake_ca(host)
+                        self.create_ca2(host)
                         self.ca_lock.release()
 
                 client_data, conn = self.receive_https_data_from_client(conn, host)
                 if client_data:
-                    if client_data.find(b'Connection') >= 0:
-                        client_data = client_data.replace(b'keep-alive', b'close')
-                    else:
-                        client_data += b'Connection: close\r\n'
-
+                    client_data = self.close_connection(client_data)
                     https_sock = self.send_https_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
                     server_data = self.receive_https_data_from_server(https_sock, conn)
                     https_sock.close()
@@ -403,7 +392,6 @@ class Proxy:
                     self.https_client_data_analysis(client_data)
 
             else:
-
                 # 建立连接， 发送接收数据
                 http_sock = self.send_http_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
                 # print(client_data)
@@ -412,15 +400,18 @@ class Proxy:
                 http_sock.close()
 
             conn.close()
-
-            if (not self.fliter(self.result['path'], 'ext')) and server_data and self.result['method'] != b'CONNECT':
+            if self.result['method'] != b'CONNECT' and self.filter(self.result['path'], 'ext'):
                 self.server_data_analysis(server_data)
-                self.result['vul'] = Scan(self.result).run()
-                if 'response_header' in self.result and self.fliter(self.result['url'], 'host'):
-                    pass
-                    # Database().proxy_insert(self.result)
+                # self.result['vul'] = Scan(self.result).run()
+                self.result['vul'] = ''
+                self.db.proxy_insert(self.result)
+        else:
+            http_sock = self.send_http_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
+            server_data = self.receive_http_data_from_server(http_sock, conn, self.result['url'].decode())
+            http_sock.close()
+            conn.close()
 
 
 if __name__ == '__main__':
     Proxy().run()
-    # print(Proxy().fliter(b'www.cnzz.com', 'host'))
+    # print(Proxy().filter(b'www.cnzz.com', 'host'))

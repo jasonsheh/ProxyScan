@@ -3,11 +3,12 @@
 # -*- coding:utf-8 -*-
 
 import sqlite3
+from config import install_path
 
 
 class Database:
     def __init__(self):
-        self.conn = sqlite3.connect('/home/jasonsheh/Tools/python/ProxyScan/proxyscan.db')
+        self.conn = sqlite3.connect(install_path + '\proxyscan.db')
         self.cursor = self.conn.cursor()
 
     def create_database(self):
@@ -36,14 +37,16 @@ class Database:
         print("create proxy successfully")
 
     def proxy_insert(self, result):
-        # print('2', result)
         url = result['url'].decode()
         scheme = result['scheme'].decode()
         host = result['host'].decode()
         path = result['path'].decode()
         port = result['port'].decode()
         query = result['query'].decode()
-        status_code = result['status_code'].decode()
+        try:
+            status_code = result['status_code'].decode()
+        except KeyError:
+            print(url)
         charset = result['charset']
         method = result['method'].decode()
         vul = result['vul']
@@ -55,7 +58,7 @@ class Database:
 
         response_header = result['response_header'].decode()
         if result['request_body'] and charset:
-            response_body = result['response_body'].decode(charset)
+            response_body = result['response_body'].decode(charset, 'ignore')
         else:
             response_body = str(result['response_body'])[2:-1]
 
@@ -65,7 +68,6 @@ class Database:
         self.cursor.execute(sql, (url, scheme, host, path, port, query, status_code, charset, method,
                                   vul, request_header, request_body, response_header, response_body))
         self.conn.commit()
-
         self.clean()
 
     def select_by_page(self, page):
@@ -193,9 +195,6 @@ class Database:
             _result['url'] = result[1]
             _result['vul'] = result[2]
             _results.append(_result)
-
-        self.clean()
-
         return _results
 
     def url_aleardy_test(self, result):
@@ -207,6 +206,7 @@ class Database:
     def clean(self):
         self.cursor.close()
         self.conn.close()
+
 
 if __name__ == '__main__':
     Database().create_database()

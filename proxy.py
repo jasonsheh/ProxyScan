@@ -33,15 +33,16 @@ class Proxy:
         self.host: str = '0.0.0.0'
         self.port: int = 8000
         self.denies: List[bytes] = [b"google.com", b"gvt2.com", b'mozilla.net', b'mozilla.com', b'mozilla.org', b'firefox.com',
-                       b'cnzz.com', b'google-analytics.com', b'tianqi.com']
-        self.static_ext: List[bytes] = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico', b'.swf', b'.jpeg', b'.pdf']
-        self.result: Dict = {}
+                                    b'cnzz.com', b'google-analytics.com', b'tianqi.com', b'firefox.com.cn']
+        self.static_ext: List[bytes] = [b'.js', b'.css', b'.jpg', b'.png', b'.gif', b'.ico', b'.swf', b'.mp4', b'.jpeg', b'.pdf']
         self.ca_lock = threading.Lock()
+
+        self.db_lock = threading.Lock()
+        self.db = Database()
 
         # 创建socket对象
         # self.https_sock = ssl.wrap_socket(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
         self.proxy_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.db = Database()
 
     def connect_client(self):
         try:
@@ -215,12 +216,12 @@ class Proxy:
             print('FileNotFoundError', host)
         try:
             conn_stream = context.wrap_socket(conn, server_side=True)
-            client_data = conn_stream.recv(data_size)
-            return client_data, conn_stream
-        # except ConnectionAbortedError:
-        #     print('无法连接至', self.result['url'].decode())
+            data = conn_stream.recv(data_size)
+
+            return data, conn_stream
         except Exception as e:
-            print(e, self.result['url'].decode())
+            print('[1]', e)
+            return '', ''
 
     def send_https_data_to_server(self, host, port, client_data):
         https_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -246,7 +247,7 @@ class Proxy:
                 else:
                     break
             except Exception as e:
-                print(e, self.result['url'].decode(), server_data.decode())
+                print('[2]', e)
                 break
         return https_data
 
@@ -266,12 +267,12 @@ class Proxy:
             try:
                 server_data = http_sock.recv(data_size)
                 if server_data:
-                    http_data += server_data
                     conn.send(server_data)
+                    http_data += server_data
                 else:
                     break
             except Exception as e:
-                print(e, url)
+                print('[3]', e, url)
                 break
         return http_data
 
@@ -288,17 +289,18 @@ class Proxy:
                 else:
                     url = b'http://' + url
 
-            self.result = {'url': url, 'request_header': request_header}
-            self.result['scheme'], self.result['host'], self.result['path'], \
-            self.result['params'], self.result['query'], self.result['fragment'] = urlparse(url)
+            result = {'url': url, 'request_header': request_header}
+            result['scheme'], result['host'], result['path'], result['params'], result['query'], result['fragment'] = urlparse(url)
 
-            if b':' in self.result['host']:
-                self.result['host'], self.result['port'] = self.result['host'].rsplit(b':')
+            if b':' in result['host']:
+                result['host'], result['port'] = result['host'].rsplit(b':')
             else:
-                self.result['port'] = b'80'
+                result['port'] = b'80'
 
-            self.result['method'] = client_data.split(b' ')[0]
-            self.result['request_body'] = request_body
+            result['method'] = client_data.split(b' ')[0]
+            result['request_body'] = request_body
+
+            return result
 
     def https_client_data_analysis(self, client_data):
         if b'\r\n\r\n' in client_data:
@@ -310,37 +312,37 @@ class Proxy:
             host = headers[1].split(b" ")[1].strip()
             url = b'https://' + host + path
 
-            self.result = {'url': url, 'request_header': request_header}
-            self.result['scheme'], self.result['host'], self.result['path'], self.result['params'], self.result['query'],\
-            self.result['fragment'] = urlparse(url)
+            result = {'url': url, 'request_header': request_header}
+            result['scheme'], result['host'], result['path'], result['params'], result['query'], result['fragment'] = urlparse(url)
 
-            if b':' in self.result['host']:
-                self.result['host'], self.result['port'] = self.result['host'].rsplit(b':')
+            if b':' in result['host']:
+                result['host'], result['port'] = result['host'].rsplit(b':')
             else:
-                self.result['port'] = b'80'
+                result['port'] = b'80'
 
-            self.result['method'] = client_data.split(b' ')[0]
-            self.result['request_body'] = request_body
+            result['method'] = client_data.split(b' ')[0]
+            result['request_body'] = request_body
 
-    def server_data_analysis(self, server_data):
-        if b'\r\n\r\n' in server_data:
-            response_header, response_body = server_data.split(b"\r\n\r\n", 1)
+            return result
 
-            self.result['response_header'] = response_header
-            self.result['response_body'] = response_body
-            self.result['status_code'] = response_header.split(b"\r\n")[0].split(b' ')[1]
-            # print(self.result['status_code'].decode())
-            if b'charset=' in server_data:
-                # pattern = re.compile('charset=(.*?)[">]*\\\\r\\\\n')
-                pattern = re.compile('charset=([-a-zA-Z_0-9]+)\S.')
-                try:
-                    self.result['charset'] = re.findall(pattern, str(server_data))[0]
-                except IndexError:
-                    print('charset', self.result['charset'], server_data)
-            else:
-                self.result['charset'] = ''
+    @staticmethod
+    def server_data_analysis(server_data, result):
+        response_header, response_body = server_data.split(b"\r\n\r\n", 1)
+
+        result['response_header'] = response_header
+        result['response_body'] = response_body
+        result['status_code'] = response_header.split(b"\r\n")[0].split(b' ')[1]
+        # print(result['status_code'].decode())
+        if b'charset' in server_data:
+            # pattern = re.compile('charset=(.*?)[">]*\\\\r\\\\n')
+            pattern = re.compile('charset=\S*([-a-zA-Z_0-9]+)\S.')
+            try:
+                result['charset'] = re.findall(pattern, str(server_data))[0]
+            except Exception as e:
+                print(e, 'charset', server_data)
         else:
-            print('server_data ', server_data)
+            result['charset'] = b' '
+        return result
 
     def run(self):
         self.connect_client()
@@ -358,32 +360,37 @@ class Proxy:
     def proxy(self, conn):
         server_data = ''
         client_data = conn.recv(data_size)
+        if not client_data:
+            return
 
-        self.client_data_analysis(client_data)
+        result = self.client_data_analysis(client_data)
 
         # 对不在黑名单中的域名进行处理
-        if self.filter(self.result['host'], 'host'):
+        if self.filter(result['host'], 'host'):
             client_data = self.close_connection(client_data)
 
             # https的connect方法
-            if self.result['method'] == b'CONNECT':
-                if self.result['host'].decode().count('.') > 1:
-                    host = '*.'+self.result['host'].decode().split('.', 1)[1]
+            if result['method'] == b'CONNECT':
+                if result['host'].decode().count('.') > 1:
+                    host = '*.'+result['host'].decode().split('.', 1)[1]
                     if not os.path.exists("./cert/website/" + host + ".pem") and self.ca_lock.acquire():
                         # self.create_fake_ca(host)
                         self.create_ca2(host)
                         self.ca_lock.release()
                 else:
-                    host = self.result['host'].decode()
+                    host = result['host'].decode()
                     if not os.path.exists("./cert/website/" + host + ".pem") and self.ca_lock.acquire():
                         # self.create_fake_ca(host)
                         self.create_ca2(host)
                         self.ca_lock.release()
 
                 client_data, conn = self.receive_https_data_from_client(conn, host)
+                if not client_data:
+                    return
+
                 if client_data:
                     client_data = self.close_connection(client_data)
-                    https_sock = self.send_https_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
+                    https_sock = self.send_https_data_to_server(result['host'].decode(), int(result['port']), client_data)
                     server_data = self.receive_https_data_from_server(https_sock, conn)
                     https_sock.close()
 
@@ -393,21 +400,24 @@ class Proxy:
 
             else:
                 # 建立连接， 发送接收数据
-                http_sock = self.send_http_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
+                http_sock = self.send_http_data_to_server(result['host'].decode(), int(result['port']), client_data)
                 # print(client_data)
-                server_data = self.receive_http_data_from_server(http_sock, conn, self.result['url'].decode())
+                server_data = self.receive_http_data_from_server(http_sock, conn, result['url'].decode())
                 # print(server_data)
                 http_sock.close()
 
             conn.close()
-            if self.result['method'] != b'CONNECT' and self.filter(self.result['path'], 'ext'):
-                self.server_data_analysis(server_data)
-                # self.result['vul'] = Scan(self.result).run()
-                self.result['vul'] = ''
-                self.db.proxy_insert(self.result)
+            if result['method'] != b'CONNECT' and self.filter(result['path'], 'ext'):
+                if b'Content-Type: image/jpeg' not in server_data:
+                    result = self.server_data_analysis(server_data, result)
+                    # result['vul'] = Scan(result).run()
+                    result['vul'] = ''
+                    if self.db_lock.acquire():
+                        self.db.proxy_insert(result)
+                        self.db_lock.release()
         else:
-            http_sock = self.send_http_data_to_server(self.result['host'].decode(), int(self.result['port']), client_data)
-            server_data = self.receive_http_data_from_server(http_sock, conn, self.result['url'].decode())
+            http_sock = self.send_http_data_to_server(result['host'].decode(), int(result['port']), client_data)
+            server_data = self.receive_http_data_from_server(http_sock, conn, result['url'].decode())
             http_sock.close()
             conn.close()
 

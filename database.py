@@ -8,7 +8,7 @@ from config import install_path
 
 class Database:
     def __init__(self):
-        self.conn = sqlite3.connect(install_path + '\proxyscan.db')
+        self.conn = sqlite3.connect(install_path + '\proxyscan.db', check_same_thread=False)
         self.cursor = self.conn.cursor()
 
     def create_database(self):
@@ -43,10 +43,7 @@ class Database:
         path = result['path'].decode()
         port = result['port'].decode()
         query = result['query'].decode()
-        try:
-            status_code = result['status_code'].decode()
-        except KeyError:
-            print(url)
+        status_code = result['status_code'].decode()
         charset = result['charset']
         method = result['method'].decode()
         vul = result['vul']
@@ -68,7 +65,6 @@ class Database:
         self.cursor.execute(sql, (url, scheme, host, path, port, query, status_code, charset, method,
                                   vul, request_header, request_body, response_header, response_body))
         self.conn.commit()
-        self.clean()
 
     def select_by_page(self, page):
         sql = 'select * from proxy order by id desc limit ?, 15'
@@ -119,7 +115,6 @@ class Database:
         _result['request_body'] = result[12]
         _result['response_header'] = result[13]
         _result['response_body'] = result[14]
-
         self.clean()
 
         return _result
